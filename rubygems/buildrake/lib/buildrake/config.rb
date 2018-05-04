@@ -413,10 +413,10 @@ configuration:
 
 before_build:
   - cd "%DIR%"
-  - cmake -G"%GENERATOR%" .
+  - cmake -G"%GENERATOR%" -A"%PLATFORM%" .
 
 build:
-  parallel: true
+  parallel: false
 
 after_build:
   - dir
