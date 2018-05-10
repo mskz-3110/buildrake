@@ -9,12 +9,16 @@ module Buildrake
       @project_name = ""
       
       @inc_dirs = []
-      @lnk_dirs = []
+      @lib_dirs = []
       @srcs = []
       
       @c_flags = []
       @cxx_flags = []
       @ld_flags = []
+      
+      @windows_c_flags = []
+      @windows_cxx_flags = []
+      @windows_ld_flags = []
       
       @macos_archs = [ "i386", "x86_64" ]
       @android_archs = [ "x86", "armeabi-v7a" ]
@@ -65,8 +69,20 @@ set(#{project_name}_LIB_DIR ${CMAKE_CURRENT_LIST_DIR}/lib/${#{project_name}_PLAT
 set(#{project_name}_SHARED_LIBS #{@project_name})
 set(#{project_name}_STATIC_LIBS ${#{project_name}_LIB_DIR}/lib#{@project_name}.a)
 
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} #{@c_flags.join( ' ' )}")
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} #{@cxx_flags.join( ' ' )}")
+if(${CMAKE_SYSTEM_NAME} STREQUAL "Windows")
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} #{@windows_c_flags.join( ' ' )}")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} #{@windows_cxx_flags.join( ' ' )}")
+  set(CMAKE_LD_FLAGS "${CMAKE_LD_FLAGS} #{@windows_ld_flags.join( ' ' )}")
+else()
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} #{@c_flags.join( ' ' )}")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} #{@cxx_flags.join( ' ' )}")
+  set(CMAKE_LD_FLAGS "${CMAKE_LD_FLAGS} #{@ld_flags.join( ' ' )}")
+endif()
+
+set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${CMAKE_LD_FLAGS}")
+set(CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS} ${CMAKE_LD_FLAGS}")
+set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} ${CMAKE_LD_FLAGS}")
+set(CMAKE_STATIC_LINKER_FLAGS "${CMAKE_STATIC_LINKER_FLAGS} ${CMAKE_LD_FLAGS}")
 
 set(#{project_name}_ROOT_DIR ${CMAKE_CURRENT_LIST_DIR}/..)
 
@@ -78,7 +94,7 @@ include_directories(${CMAKE_CURRENT_LIST_DIR}/#{dir})
 EOS
         }
         
-        @lnk_dirs.each{|dir|
+        @lib_dirs.each{|dir|
           f.puts <<EOS
 link_directories(${CMAKE_CURRENT_LIST_DIR}/#{dir})
 EOS
@@ -253,7 +269,7 @@ EOS
             
             f.puts <<EOS
 APP_PLATFORM := android-16
-APP_ABI := armeabi-v7a x86
+APP_ABI := armeabi-v7a x86 arm64-v8a
 APP_OPTIM := debug
 APP_CFLAGS := #{@c_flags.join( ' ' )}
 APP_CPPFLAGS := #{@cxx_flags.join( ' ' )}
@@ -416,7 +432,7 @@ before_build:
   - cmake -G"%GENERATOR%" -A"%PLATFORM%" .
 
 build:
-  parallel: false
+  parallel: true
 
 after_build:
   - dir
