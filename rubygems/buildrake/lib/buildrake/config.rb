@@ -19,6 +19,7 @@ module Buildrake
       @windows_c_flags = []
       @windows_cxx_flags = []
       @windows_ld_flags = []
+      @windows_artifact_name = "$(ARTIFACT_PREFIX)_$(CONFIGURATION)"
       
       @macos_archs = [ "i386", "x86_64" ]
       @android_archs = [ "x86", "armeabi-v7a" ]
@@ -65,10 +66,6 @@ module Buildrake
         f.puts <<EOS
 project(#{@project_name})
 
-set(#{project_name}_LIB_DIR ${CMAKE_CURRENT_LIST_DIR}/lib/${#{project_name}_PLATFORM})
-set(#{project_name}_SHARED_LIBS #{@project_name})
-set(#{project_name}_STATIC_LIBS ${#{project_name}_LIB_DIR}/lib#{@project_name}.a)
-
 if(${CMAKE_SYSTEM_NAME} STREQUAL "Windows")
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} #{@windows_c_flags.join( ' ' )}")
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} #{@windows_cxx_flags.join( ' ' )}")
@@ -107,6 +104,8 @@ EOS
         @srcs.each{|src|
           f.puts "set(#{project_name}_SRCS ${#{project_name}_SRCS} ${#{project_name}_ROOT_DIR}/#{src})"
         }
+        
+        f.puts ""
         
         case @type
         when LIBRARY
@@ -403,7 +402,7 @@ EOS
               end
               
               f.puts <<EOS
-      NAME: #{version}_#{bits}_#{option}
+      ARTIFACT_PREFIX: #{version}_#{bits}_#{option}
       DIR: build\\windows\\#{version}_#{bits}_#{option}
 EOS
               case bits
@@ -437,10 +436,16 @@ build:
 after_build:
   - dir
   - dir "%CONFIGURATION%"
+  - mkdir artifacts
+  - rename "%CONFIGURATION%" "artifacts/#{@windows_artifact_name.gsub( /(\$\(|\))/, '%' )}"
+  - dir /S artifacts
 
 artifacts:
-  - path: $(DIR)\\$(CONFIGURATION)
-    name: $(NAME)_$(CONFIGURATION)
+  - path: $(DIR)\\artifacts
+    name: #{@windows_artifact_name}
+
+skip_tags: true
+
 EOS
       }
     end
