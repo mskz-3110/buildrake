@@ -2,15 +2,33 @@ require "fileutils"
 
 module Buildrake
   class Config
+    def self.method_accessor( *names )
+      names.each{|name|
+        class_eval <<EOS
+def #{name}( *args )
+  args.empty? ? @#{name} : @#{name} = args.first
+end
+EOS
+      }
+    end
+    
+    method_accessor :project_name
+    method_accessor :inc_dirs, :lib_dirs
+    method_accessor :c_flags, :cxx_flags, :ld_flags
+    method_accessor :windows_c_flags, :windows_cxx_flags, :windows_ld_flags
+    method_accessor :windows_archs, :windows_artifact_name, :windows_visual_studio_versions
+    method_accessor :macos_archs, :ios_archs
+    method_accessor :android_archs, :android_stl, :android_api_level
+    method_accessor :cmake_version
+    
     EXECUTE = "execute"
     LIBRARY = "library"
     
-    def initialize
-      @project_name = ""
+    def initialize( project_name )
+      @project_name = project_name
       
       @inc_dirs = []
       @lib_dirs = []
-      @srcs = []
       
       @c_flags = []
       @cxx_flags = []
@@ -19,14 +37,30 @@ module Buildrake
       @windows_c_flags = []
       @windows_cxx_flags = []
       @windows_ld_flags = []
-      @windows_artifact_name = "$(ARTIFACT_PREFIX)_$(CONFIGURATION)"
       
-      @macos_archs = [ "i386", "x86_64" ]
-      @android_archs = [ "x86", "armeabi-v7a" ]
-      @ios_archs = [ "armv7", "armv7s", "arm64" ]
+      @windows_archs = [ "Win32", "x64" ]
+      @windows_artifact_name = "$(ARTIFACT_PREFIX)_$(CONFIGURATION)"
       @windows_visual_studio_versions = [ 2012, 2013, 2015, 2017 ]
       
+      @macos_archs = [ "i386", "x86_64" ]
+      @ios_archs = [ "armv7", "armv7s", "arm64" ]
+      
+      @android_archs = [ "x86", "armeabi-v7a", "arm64-v8a" ]
+      @android_stl = ""
+      @android_api_level = 16
+      
       @cmake_version = "3.0"
+      
+      @executes = {}
+      @libraries = {}
+    end
+    
+    def execute( name, srcs, libs = [] )
+      @executes[ name ] = { :srcs => srcs, :libs => libs }
+    end
+    
+    def library( name, srcs, libs = [] )
+      @libraries[ name ] = { :srcs => srcs, :libs => libs }
     end
     
     def run( argv )
@@ -45,12 +79,47 @@ module Buildrake
       appveyor_file
     end
     
-    def build( *args )
-      
+    def platform( action, platform )
+      Dir.chdir( "build/#{platform}" ){
+        sh( "rake #{action}" ) if File.exists?( "Rakefile" )
+      }
     end
     
-    def package( *args )
-      
+    def build( *args )
+      platforms( :build, *args )
+    end
+    
+    def clean( *args )
+      platforms( :clean, *args )
+    end
+    
+    def sh( command )
+      system( command )
+      exitstatus = $?.exitstatus
+      raise "Command failed with status (#{exitstatus}): #{command}" if 0 != exitstatus
+    end
+    
+  protected
+    def get_platforms( *args )
+      platforms = []
+      if args.empty?
+        case RUBY_PLATFORM
+        when /darwin/
+          platforms = [ :make, :macos, :ios ]
+        else
+          platforms = [ :make ]
+        end
+        platforms.push :android if ENV.key?( "ANDROID_NDK" )
+      else
+        platforms = args
+      end
+      platforms
+    end
+    
+    def platforms( action, *args )
+      get_platforms( *args ).each{|platform|
+        platform( action, platform )
+      }
     end
     
   private
@@ -60,8 +129,6 @@ module Buildrake
     end
     
     def build_files
-      project_name = @project_name.upcase
-      
       open( "#{@project_name}.cmake", "wb" ){|f|
         f.puts <<EOS
 project(#{@project_name})
@@ -81,42 +148,77 @@ set(CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS} ${CMAKE_LD_FLAGS}")
 set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} ${CMAKE_LD_FLAGS}")
 set(CMAKE_STATIC_LINKER_FLAGS "${CMAKE_STATIC_LINKER_FLAGS} ${CMAKE_LD_FLAGS}")
 
-set(#{project_name}_ROOT_DIR ${CMAKE_CURRENT_LIST_DIR}/..)
+set(#{@project_name.upcase}_ROOT_DIR ${CMAKE_CURRENT_LIST_DIR}/..)
 
 EOS
         
         @inc_dirs.each{|dir|
+          dir = "${#{@project_name.upcase}_ROOT_DIR}/#{dir}" if dir =~ /^\./
           f.puts <<EOS
-include_directories(${CMAKE_CURRENT_LIST_DIR}/#{dir})
+include_directories(#{dir})
 EOS
         }
         
+        lib_dirs = []
         @lib_dirs.each{|dir|
+          dir = "${#{@project_name.upcase}_ROOT_DIR}/#{dir}" if dir =~ /^\./
+          dir = "#{dir}/${#{@project_name.upcase}_PLATFORM_PATH}"
+          lib_dirs.push dir
           f.puts <<EOS
-link_directories(${CMAKE_CURRENT_LIST_DIR}/#{dir})
+link_directories(#{dir})
 EOS
-        }
-        
-        f.puts <<EOS
-set(#{project_name}_SRCS)
-EOS
-        
-        @srcs.each{|src|
-          f.puts "set(#{project_name}_SRCS ${#{project_name}_SRCS} ${#{project_name}_ROOT_DIR}/#{src})"
         }
         
         f.puts ""
         
-        case @type
-        when LIBRARY
-          f.puts <<EOS
-add_library(#{@project_name}-shared SHARED ${#{project_name}_SRCS})
-SET_TARGET_PROPERTIES(#{@project_name}-shared PROPERTIES OUTPUT_NAME #{@project_name})
-
-add_library(#{@project_name}-static STATIC ${#{project_name}_SRCS})
-SET_TARGET_PROPERTIES(#{@project_name}-static PROPERTIES OUTPUT_NAME #{@project_name})
+        @executes.each{|name, data|
+          f.puts "set(#{@project_name.upcase}_EXE_#{name.upcase}_SRCS)"
+          data[ :srcs ].each{|src|
+            f.puts "set(#{@project_name.upcase}_EXE_#{name.upcase}_SRCS ${#{@project_name.upcase}_EXE_#{name.upcase}_SRCS} ${#{@project_name.upcase}_ROOT_DIR}/#{src})"
+          }
+          
+          lib_names = []
+          data[ :libs ].each{|name|
+            f.puts <<EOS
+find_library(#{@project_name.upcase}_LIB_#{name.upcase} NAMES lib#{name}.a #{name} PATHS #{lib_dirs.join( ' ' )})
+message(#{@project_name.upcase}_LIB_#{name.upcase}=${#{@project_name.upcase}_LIB_#{name.upcase}})
 EOS
-        end
+            lib_names.push "${#{@project_name.upcase}_LIB_#{name.upcase}}"
+          }
+          
+          f.puts <<EOS
+
+add_executable(#{name} ${#{@project_name.upcase}_EXE_#{name.upcase}_SRCS})
+target_link_libraries(#{name} #{lib_names.join( ' ' )})
+EOS
+        }
+        
+        @libraries.each{|name, data|
+          f.puts "set(#{@project_name.upcase}_LIB_#{name.upcase}_SRCS)"
+          data[ :srcs ].each{|src|
+            f.puts "set(#{@project_name.upcase}_LIB_#{name.upcase}_SRCS ${#{@project_name.upcase}_LIB_#{name.upcase}_SRCS} ${#{@project_name.upcase}_ROOT_DIR}/#{src})"
+          }
+          
+          lib_names = []
+          data[ :libs ].each{|name|
+            f.puts <<EOS
+find_library(#{@project_name.upcase}_LIB_#{name.upcase} NAMES lib#{name}.a #{name} PATHS #{lib_dirs.join( ' ' )})
+message(#{@project_name.upcase}_LIB_#{name.upcase}=${#{@project_name.upcase}_LIB_#{name.upcase}})
+EOS
+            lib_names.push "${#{@project_name.upcase}_LIB_#{name.upcase}}"
+          }
+          
+          f.puts <<EOS
+
+add_library(#{name}-shared SHARED ${#{@project_name.upcase}_LIB_#{name.upcase}_SRCS})
+target_link_libraries(#{name}-shared #{lib_names.join( ' ' )})
+SET_TARGET_PROPERTIES(#{name}-shared PROPERTIES OUTPUT_NAME #{name})
+
+add_library(#{name}-static STATIC ${#{@project_name.upcase}_LIB_#{name.upcase}_SRCS})
+target_link_libraries(#{name}-static #{lib_names.join( ' ' )})
+SET_TARGET_PROPERTIES(#{name}-static PROPERTIES OUTPUT_NAME #{name})
+EOS
+        }
       }
       
       open( "#{@project_name}_rake.rb", "wb" ){|f|
@@ -151,6 +253,15 @@ task :build do
   
   build
 end
+
+desc "Clean"
+task :clean do
+  Dir.glob( [ "CMakeCache.txt", "CMakeFiles", "CMakeScripts", "Makefile", "cmake_install.cmake" ] ){|path|
+    FileUtils.rm_rf( path )
+  }
+  
+  clean
+end
 EOS
       }
     end
@@ -161,6 +272,7 @@ EOS
           f.puts <<EOS
 cmake_minimum_required(VERSION #{@cmake_version})
 
+set(#{@project_name.upcase}_PLATFORM_PATH macos)
 include(${CMAKE_CURRENT_LIST_DIR}/../#{@project_name}.cmake)
 EOS
         }
@@ -174,13 +286,23 @@ def cmake
 end
 
 def build
+  configuration = "Debug"
+  configuration = ENV[ 'CONFIGURATION' ] if ENV.key?( 'CONFIGURATION' )
   #{@macos_archs}.each{|arch|
-    xcodebuild( "#{@project_name}.xcodeproj", "Debug", "macosx", arch, "lib/\#{arch}" )
+    xcodebuild( "#{@project_name}.xcodeproj", configuration, "macosx", arch, "out/\#{arch}" )
   }
-  ["lib#{@project_name}.a", "lib#{@project_name}.dylib"].each{|library|
-    ext = File.extname( library )
-    lipo_create( "lib/*/*\#{ext}", library )
-    lipo_info( library )
+  #{@libraries.keys}.each{|name|
+    ["lib\#{name}.a", "lib\#{name}.dylib"].each{|library|
+      ext = File.extname( library )
+      lipo_create( "out/*/*\#{ext}", library )
+      lipo_info( library )
+    }
+  }
+end
+
+def clean
+  Dir.glob( [ "out", "lib*.*", "*.build", "*.xcodeproj", "Debug", "Release" ] ){|path|
+    FileUtils.rm_rf( path )
   }
 end
 EOS
@@ -194,6 +316,7 @@ EOS
           f.puts <<EOS
 cmake_minimum_required(VERSION #{@cmake_version})
 
+set(#{@project_name.upcase}_PLATFORM_PATH ios)
 include(${CMAKE_CURRENT_LIST_DIR}/../#{@project_name}.cmake)
 EOS
         }
@@ -207,16 +330,29 @@ def cmake
 end
 
 def build
-  #{@macos_archs}.each{|arch|
-    xcodebuild( "#{@project_name}.xcodeproj", "Debug", "iphonesimulator", arch, "lib/\#{arch}" )
+  if ! #{@libraries.empty?}
+    configuration = "Debug"
+    configuration = ENV[ 'CONFIGURATION' ] if ENV.key?( 'CONFIGURATION' )
+    #{@macos_archs}.each{|arch|
+      xcodebuild( "#{@project_name}.xcodeproj", configuration, "iphonesimulator", arch, "out/\#{arch}" )
+    }
+    #{@ios_archs}.each{|arch|
+      xcodebuild( "#{@project_name}.xcodeproj", configuration, "iphoneos", arch, "out/\#{arch}" )
+    }
+  end
+  
+  #{@libraries.keys}.each{|name|
+    ["lib\#{name}.a", "lib\#{name}.dylib"].each{|library|
+      ext = File.extname( library )
+      lipo_create( "out/*/*\#{ext}", library )
+      lipo_info( library )
+    }
   }
-  #{@ios_archs}.each{|arch|
-    xcodebuild( "#{@project_name}.xcodeproj", "Debug", "iphoneos", arch, "lib/\#{arch}" )
-  }
-  ["lib#{@project_name}.a", "lib#{@project_name}.dylib"].each{|library|
-    ext = File.extname( library )
-    lipo_create( "lib/*/*\#{ext}", library )
-    lipo_info( library )
+end
+
+def clean
+  Dir.glob( [ "out", "lib*.*", "*.build", "*.xcodeproj", "Debug", "Release" ] ){|path|
+    FileUtils.rm_rf( path )
   }
 end
 EOS
@@ -230,6 +366,7 @@ EOS
           f.puts <<EOS
 cmake_minimum_required(VERSION #{@cmake_version})
 
+set(#{@project_name.upcase}_PLATFORM_PATH make)
 include(${CMAKE_CURRENT_LIST_DIR}/../#{@project_name}.cmake)
 EOS
         }
@@ -245,6 +382,12 @@ end
 def build
   sh( "make" )
 end
+
+def clean
+  Dir.glob( [ "lib*.*" ] ){|path|
+    FileUtils.rm_rf( path )
+  }
+end
 EOS
         }
       }
@@ -255,56 +398,102 @@ EOS
       dir( "android" ){
         dir( "jni" ){
           open( "Application.mk", "wb" ){|f|
-            case @type
-            when EXECUTE
-              f.puts <<EOS
-APP_MODULES := sqlite
-EOS
-            when LIBRARY
-              f.puts <<EOS
-APP_MODULES := sqlite-static sqlite-shared
-EOS
-            end
+            modules = []
+            @executes.each{|name, data|
+              modules.push name
+            }
+            @libraries.each{|name, data|
+              modules.push "#{name}-static #{name}-shared"
+            }
             
             f.puts <<EOS
-APP_PLATFORM := android-16
-APP_ABI := armeabi-v7a x86 arm64-v8a
+APP_MODULES := #{modules.join( ' ' )}
+APP_PLATFORM := android-#{@android_api_level}
+APP_ABI := #{@android_archs.join( ' ' )}
 APP_OPTIM := debug
 APP_CFLAGS := #{@c_flags.join( ' ' )}
 APP_CPPFLAGS := #{@cxx_flags.join( ' ' )}
 APP_LDFLAGS := #{@ld_flags.join( ' ' )}
 EOS
+            f.puts "APP_STL := #{@android_stl}" if ! @android_stl.empty?
           }
           
           open( "Android.mk", "wb" ){|f|
             f.puts <<EOS
 LOCAL_PATH := $(call my-dir)/..
 
-#{project_name}_ROOT_DIR := $(LOCAL_PATH)/../..
-#{project_name}_SRCS :=
+#{@project_name.upcase}_ROOT_DIR := $(LOCAL_PATH)/../..
 
 EOS
             
-            @srcs.each{|src|
-              f.puts "#{project_name}_SRCS += $(#{project_name}_ROOT_DIR)/#{src}"
+            local_settings = [
+              "LOCAL_CFLAGS := ",
+              "LOCAL_CXXFLAGS := ",
+              "LOCAL_LDLIBS := ",
+            ]
+            
+            @inc_dirs.each{|dir|
+              dir = "$(#{@project_name.upcase}_ROOT_DIR)/#{dir}" if dir =~ /^\./
+              local_settings.push "LOCAL_CFLAGS += -I#{dir}"
+              local_settings.push "LOCAL_CXXFLAGS += -I#{dir}"
             }
             
-            case @type
-            when LIBRARY
+            @lib_dirs.each{|dir|
+              dir = "$(#{@project_name.upcase}_ROOT_DIR)/#{dir}" if dir =~ /^\./
+              local_settings.push "LOCAL_LDLIBS += -L#{dir}/android/libs/$(TARGET_ARCH_ABI)"
+            }
+            
+            @executes.each{|name, data|
+              f.puts "#{@project_name.upcase}_EXE_#{name.upcase}_SRCS :="
+              data[ :srcs ].each{|src|
+                f.puts "#{@project_name.upcase}_EXE_#{name.upcase}_SRCS += $(#{@project_name.upcase}_ROOT_DIR)/#{src}"
+              }
+              f.puts ""
+              
+              ldlibs = []
+              data[ :libs ].each{|lib|
+                ldlibs.push "LOCAL_LDLIBS += -l#{lib}"
+              }
+              
               f.puts <<EOS
 include $(CLEAR_VARS)
-LOCAL_MODULE := #{@project_name}-static
-LOCAL_MODULE_FILENAME := lib#{@project_name}
-LOCAL_SRC_FILES := $(#{project_name}_SRCS)
+LOCAL_MODULE := #{name}
+LOCAL_SRC_FILES := $(#{@project_name.upcase}_EXE_#{name.upcase}_SRCS)
+#{local_settings.join( "\n" )}
+#{ldlibs.join( "\n" )}
+include $(BUILD_EXECUTABLE)
+EOS
+            }
+            
+            @libraries.each{|name, data|
+              f.puts "#{@project_name.upcase}_LIB_#{name.upcase}_SRCS :="
+              data[ :srcs ].each{|src|
+                f.puts "#{@project_name.upcase}_LIB_#{name.upcase}_SRCS += $(#{@project_name.upcase}_ROOT_DIR)/#{src}"
+              }
+              
+              ldlibs = []
+              data[ :libs ].each{|lib|
+                ldlibs.push "LOCAL_LDLIBS += -l#{lib}"
+              }
+              
+              f.puts <<EOS
+include $(CLEAR_VARS)
+LOCAL_MODULE := #{name}-static
+LOCAL_MODULE_FILENAME := lib#{name}
+LOCAL_SRC_FILES := $(#{@project_name.upcase}_LIB_#{name.upcase}_SRCS)
+#{local_settings.join( "\n" )}
+#{ldlibs.join( "\n" )}
 include $(BUILD_STATIC_LIBRARY)
 
 include $(CLEAR_VARS)
-LOCAL_MODULE := #{@project_name}-shared
-LOCAL_MODULE_FILENAME := lib#{@project_name}
-LOCAL_SRC_FILES := $(#{project_name}_SRCS)
+LOCAL_MODULE := #{name}-shared
+LOCAL_MODULE_FILENAME := lib#{name}
+LOCAL_SRC_FILES := $(#{@project_name.upcase}_LIB_#{name.upcase}_SRCS)
+#{local_settings.join( "\n" )}
+#{ldlibs.join( "\n" )}
 include $(BUILD_SHARED_LIBRARY)
 EOS
-            end
+            }
           }
         }
         
@@ -314,9 +503,19 @@ require File.expand_path( "../#{@project_name}_rake", File.dirname( __FILE__ ) )
 
 def build
   puts "ANDROID_NDK=\#{ENV[ 'ANDROID_NDK' ]}"
-  ndk_build = "ndk-build"
-  ndk_build = "\#{ENV[ 'ANDROID_NDK' ]}/\#{ndk_build}" if ENV.key?( "ANDROID_NDK" )
-  sh( "\#{ndk_build} NDK_LIBS_OUT=./lib NDK_OUT=./lib" )
+  sh( "\#{ENV[ 'ANDROID_NDK' ]}/ndk-build NDK_LIBS_OUT=./out NDK_OUT=./out" )
+  FileUtils.rm_rf( "libs" ) if Dir.exists?( "libs" )
+  Dir.glob( [ "out/local/*/*.*" ] ).each{|path|
+    arch = File.basename( File.dirname( path ) )
+    FileUtils.mkdir_p( "libs/\#{arch}" ) if ! Dir.exists?( "libs/\#{arch}" )
+    FileUtils.cp( path, "libs/\#{arch}/." )
+  }
+end
+
+def clean
+  Dir.glob( [ "out", "libs" ] ){|path|
+    FileUtils.rm_rf( path )
+  }
 end
 EOS
         }
@@ -342,28 +541,45 @@ EOS
         }
         
         @windows_visual_studio_versions.each{|version|
-          [ 32, 64 ].each{|bits|
-            dir( "#{version}_#{bits}_MD" ){
+          @windows_archs.each{|arch|
+            dir( "#{version}_#{arch}_MD" ){
               open( "CMakeLists.txt", "wb" ){|f|
                 f.puts <<EOS
 cmake_minimum_required(VERSION #{@cmake_version})
 
+set(#{@project_name.upcase}_PLATFORM_PATH windows/libs/#{version}_#{arch}_MD)
 include(${CMAKE_CURRENT_LIST_DIR}/../../#{@project_name}.cmake)
 EOS
               }
             }
             
-            dir( "#{version}_#{bits}_MT" ){
+            dir( "#{version}_#{arch}_MT" ){
               open( "CMakeLists.txt", "wb" ){|f|
                 f.puts <<EOS
 cmake_minimum_required(VERSION #{@cmake_version})
 
+set(#{@project_name.upcase}_PLATFORM_PATH windows/libs/#{version}_#{arch}_MT)
 include(${CMAKE_CURRENT_LIST_DIR}/../../#{@project_name}.cmake)
 include(${CMAKE_CURRENT_LIST_DIR}/../windows_MT.cmake)
 EOS
               }
             }
           }
+        }
+        
+        open( "Rakefile", "wb" ){|f|
+          f.puts <<EOS
+require File.expand_path( "../#{@project_name}_rake", File.dirname( __FILE__ ) )
+
+def build
+end
+
+def clean
+  Dir.glob( [ "libs" ] ){|path|
+    FileUtils.rm_rf( path )
+  }
+end
+EOS
         }
       }
     end
@@ -376,7 +592,7 @@ environment:
 EOS
         
         @windows_visual_studio_versions.each{|version|
-          [ 32, 64 ].each{|bits|
+          @windows_archs.each{|arch|
             [ "MD", "MT" ].each{|option|
               case version
               when 2012
@@ -402,19 +618,10 @@ EOS
               end
               
               f.puts <<EOS
-      ARTIFACT_PREFIX: #{version}_#{bits}_#{option}
-      DIR: build\\windows\\#{version}_#{bits}_#{option}
+      ARTIFACT_PREFIX: #{version}_#{arch}_#{option}
+      DIR: build\\windows\\#{version}_#{arch}_#{option}
+      PLATFORM: #{arch}
 EOS
-              case bits
-              when 32
-                f.puts <<EOS
-      PLATFORM: Win32
-EOS
-              when 64
-                f.puts <<EOS
-      PLATFORM: x64
-EOS
-              end
               
               f.puts ""
             }
