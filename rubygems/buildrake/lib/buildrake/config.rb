@@ -20,6 +20,7 @@ EOS
     method_accessor :macos_archs, :ios_archs
     method_accessor :android_archs, :android_stl, :android_api_level
     method_accessor :cmake_version
+    method_accessor :appveyor
     
     EXECUTE = "execute"
     LIBRARY = "library"
@@ -45,11 +46,13 @@ EOS
       @macos_archs = [ "i386", "x86_64" ]
       @ios_archs = [ "armv7", "armv7s", "arm64" ]
       
-      @android_archs = [ "x86", "armeabi-v7a", "arm64-v8a" ]
+      @android_archs = [ "x86", "armeabi", "armeabi-v7a", "arm64-v8a" ]
       @android_stl = ""
       @android_api_level = 16
       
-      @cmake_version = "3.0"
+      @cmake_version = "2.8"
+      
+      @appveyor = nil
       
       @executes = {}
       @libraries = {}
@@ -86,11 +89,15 @@ EOS
     end
     
     def build( *args )
-      platforms( :build, *args )
+      platforms( *args ).each{|platform|
+        platform( :build, platform )
+      }
     end
     
     def clean( *args )
-      platforms( :clean, *args )
+      platforms( *args ).each{|platform|
+        platform( :clean, platform )
+      }
     end
     
     def sh( command )
@@ -99,8 +106,7 @@ EOS
       raise "Command failed with status (#{exitstatus}): #{command}" if 0 != exitstatus
     end
     
-  protected
-    def get_platforms( *args )
+    def platforms( *args )
       platforms = []
       if args.empty?
         case RUBY_PLATFORM
@@ -116,15 +122,18 @@ EOS
       platforms
     end
     
-    def platforms( action, *args )
-      get_platforms( *args ).each{|platform|
-        platform( action, platform )
-      }
+    def os_name
+      case RUBY_PLATFORM
+      when /darwin/
+        "macos #{`xcrun --sdk macosx --show-sdk-version`.chomp}"
+      else
+        RUBY_PLATFORM
+      end
     end
     
   private
     def dir( dir, &block )
-      FileUtils.mkdir( dir ) if ! Dir.exists?( dir )
+      FileUtils.mkdir_p( dir ) if ! Dir.exists?( dir )
       Dir.chdir( dir, &block )
     end
     
@@ -223,6 +232,8 @@ EOS
       
       open( "#{@project_name}_rake.rb", "wb" ){|f|
         f.puts <<EOS
+require "fileutils"
+
 def xcodebuild( project, configuration, sdk, arch, build_dir, *args )
   other_cflags = "-fembed-bitcode"
   other_cplusplusflags = "-fembed-bitcode"
@@ -241,6 +252,29 @@ end
 
 def lipo_info( library )
   sh( "lipo -info \#{library}" )
+end
+
+def dir( dir, &block )
+  FileUtils.mkdir_p( dir ) if ! Dir.exists?( dir )
+  Dir.chdir( dir, &block )
+end
+
+def platform_dir( platform )
+  return ENV[ "\#{platform.upcase}_PLATFORM_DIR" ] if ENV.key?( "\#{platform.upcase}_PLATFORM_DIR" )
+  
+  case platform
+  when :make, :macos
+    case RUBY_PLATFORM
+    when /darwin/
+      "macos/\#{\`xcrun --sdk macosx --show-sdk-version\`.chomp}"
+    end
+  when :ios
+    "ios/\#{\`xcrun --sdk iphoneos --show-sdk-version\`.chomp}"
+  when :android
+    "android/\#{ENV[ 'ANDROID_NDK' ].split( '-' ).last}"
+  else
+    platform
+  end
 end
 
 desc "Build"
@@ -272,6 +306,10 @@ EOS
           f.puts <<EOS
 cmake_minimum_required(VERSION #{@cmake_version})
 
+if (${CMAKE_SYSTEM_NAME} STREQUAL "Darwin")
+  set(CMAKE_MACOSX_RPATH 1)
+endif()
+
 set(#{@project_name.upcase}_PLATFORM_PATH macos)
 include(${CMAKE_CURRENT_LIST_DIR}/../#{@project_name}.cmake)
 EOS
@@ -298,6 +336,15 @@ def build
       lipo_info( library )
     }
   }
+  
+  build_dir = File.dirname( __FILE__ )
+  dst = "\#{build_dir}/../../lib/\#{platform_dir( :macos )}"
+  #{@libraries.keys}.each{|name|
+    Dir.glob( "lib\#{name}.*" ){|path|
+      dir( dst )
+      FileUtils.move( "\#{build_dir}/\#{path}", dst )
+    }
+  }
 end
 
 def clean
@@ -315,6 +362,10 @@ EOS
         open( "CMakeLists.txt", "wb" ){|f|
           f.puts <<EOS
 cmake_minimum_required(VERSION #{@cmake_version})
+
+if (${CMAKE_SYSTEM_NAME} STREQUAL "Darwin")
+  set(CMAKE_MACOSX_RPATH 1)
+endif()
 
 set(#{@project_name.upcase}_PLATFORM_PATH ios)
 include(${CMAKE_CURRENT_LIST_DIR}/../#{@project_name}.cmake)
@@ -348,6 +399,15 @@ def build
       lipo_info( library )
     }
   }
+  
+  build_dir = File.dirname( __FILE__ )
+  dst = "\#{build_dir}/../../lib/\#{platform_dir( :ios )}"
+  #{@libraries.keys}.each{|name|
+    Dir.glob( "lib\#{name}.*" ){|path|
+      dir( dst )
+      FileUtils.move( "\#{build_dir}/\#{path}", dst )
+    }
+  }
 end
 
 def clean
@@ -366,6 +426,10 @@ EOS
           f.puts <<EOS
 cmake_minimum_required(VERSION #{@cmake_version})
 
+if (${CMAKE_SYSTEM_NAME} STREQUAL "Darwin")
+  set(CMAKE_MACOSX_RPATH 1)
+endif()
+
 set(#{@project_name.upcase}_PLATFORM_PATH make)
 include(${CMAKE_CURRENT_LIST_DIR}/../#{@project_name}.cmake)
 EOS
@@ -381,6 +445,15 @@ end
 
 def build
   sh( "make" )
+  
+  build_dir = File.dirname( __FILE__ )
+  dst = "\#{build_dir}/../../lib/\#{platform_dir( :make )}"
+  #{@libraries.keys}.each{|name|
+    Dir.glob( "lib\#{name}.*" ){|path|
+      dir( dst )
+      FileUtils.move( "\#{build_dir}/\#{path}", dst )
+    }
+  }
 end
 
 def clean
@@ -510,6 +583,15 @@ def build
     FileUtils.mkdir_p( "libs/\#{arch}" ) if ! Dir.exists?( "libs/\#{arch}" )
     FileUtils.cp( path, "libs/\#{arch}/." )
   }
+  
+  build_dir = File.dirname( __FILE__ )
+  dst = "\#{build_dir}/../../lib/\#{platform_dir( :android )}"
+  #{@libraries.keys}.each{|name|
+    Dir.glob( "libs/**/lib\#{name}.*" ){|path|
+      dir( "\#{dst}/\#{path}" )
+      FileUtils.move( "\#{build_dir}/\#{path}", "\#{dst}/\#{path}" )
+    }
+  }
 end
 
 def clean
@@ -585,7 +667,9 @@ EOS
     end
     
     def appveyor_file
-      open( "appveyor.yml", "wb" ){|f|
+      return if @appveyor.nil?
+      
+      open( @appveyor, "wb" ){|f|
         f.puts <<EOS
 environment:
   matrix:
