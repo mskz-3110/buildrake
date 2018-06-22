@@ -55,8 +55,8 @@ module BuildrakeCommand
     File.dirname( path )
   end
   
-  def basename( path )
-    File.basename( path )
+  def basename( path, suffix = "" )
+    File.basename( path, suffix )
   end
   
   def extname( path )

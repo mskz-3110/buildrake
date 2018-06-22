@@ -151,14 +151,32 @@ EOS
       }
     end
     
-    def clean( *args )
-      platforms( *args ).each{|platform|
-        chdir( "build/#{platform}" ){
-          sh( "rake clean" ) if file?( "Rakefile" )
+    def download_lib( url, lib_dir )
+      require "nokogiri"
+      require "open-uri"
+      mkdir( lib_dir ){
+        document = Nokogiri::HTML.parse( open( url ).readlines.join )
+        document.xpath( '//strong' ).children.each{|element|
+          filename = element.text
+          extname = extname( filename )
+          case extname
+          when ""
+          when ".zip"
+            dirname = basename( filename, extname )
+            rm( dirname ) if dir?( dirname )
+            rm( filename ) if file?( filename )
+            url = url.gsub( /\/releases\/tag\//, "/releases/download/" ) if url =~ /^https\:\/\/github\.com\//
+            sh( "wget #{url}/#{filename}" )
+            sh( "unzip #{filename}" )
+            rm( filename )
+          else
+            abort( "Unsupported extname: #{extname}" )
+          end
         }
       }
     end
     
+  private
     def platforms( *args )
       platforms = []
       if args.empty?
@@ -175,16 +193,6 @@ EOS
       platforms
     end
     
-    def os_name
-      case RUBY_PLATFORM
-      when /darwin/
-        "macos #{`xcrun --sdk macosx --show-sdk-version`.chomp}"
-      else
-        RUBY_PLATFORM
-      end
-    end
-    
-  private
     def generate_makefile
       open( "Makefile", "wb" ){|f|
         f.puts <<EOS
@@ -798,13 +806,8 @@ endforeach()
 EOS
         }
         
-        @windows_visual_studio_versions.each{|version|
-          @windows_archs.each{|arch|
-            mkdir( "#{version}_#{arch}_MD" ){
-              open( "CMakeLists.txt", "wb" ){|f|
-                f.puts <<EOS
-cmake_minimum_required(VERSION #{@cmake_version})
-
+        open( "windows.cmake", "wb" ){|f|
+          f.puts <<EOS
 set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} #{@c_flags[ :windows ][ :debug ].join( ' ' )}")
 set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} #{@cxx_flags[ :windows ][ :debug ].join( ' ' )}")
 set(CMAKE_LD_FLAGS_DEBUG "${CMAKE_LD_FLAGS_DEBUG} #{@ld_flags[ :windows ][ :debug ].join( ' ' )}")
@@ -813,7 +816,40 @@ set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} #{@c_flags[ :windows ][ :rel
 set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} #{@cxx_flags[ :windows ][ :release ].join( ' ' )}")
 set(CMAKE_LD_FLAGS_RELEASE "${CMAKE_LD_FLAGS_RELEASE} #{@ld_flags[ :windows ][ :release ].join( ' ' )}")
 
-include(${CMAKE_CURRENT_LIST_DIR}/../../#{@project_name}.cmake)
+set(#{@project_name.upcase}_ROOT_DIR ${CMAKE_CURRENT_LIST_DIR}/../..)
+set(#{@project_name.upcase}_LINK_DIRS_DEBUG)
+set(#{@project_name.upcase}_LINK_DIRS_RELEASE)
+EOS
+          
+          @lib_dirs[ :windows ][ :debug ].each{|dir|
+            dir = "${#{@project_name.upcase}_ROOT_DIR}/#{dir}" if dir =~ /^\./
+            dir = dir.gsub( /\(/, "ENV{" ).gsub( /\)/, "}" )
+                  f.puts <<EOS
+set(#{@project_name.upcase}_LINK_DIRS_DEBUG ${#{@project_name.upcase}_LINK_DIRS_DEBUG} #{dir})
+EOS
+          }
+          
+          @lib_dirs[ :windows ][ :release ].each{|dir|
+            dir = "${#{@project_name.upcase}_ROOT_DIR}/#{dir}" if dir =~ /^\./
+            dir = dir.gsub( /\(/, "ENV{" ).gsub( /\)/, "}" )
+            f.puts <<EOS
+set(#{@project_name.upcase}_LINK_DIRS_RELEASE ${#{@project_name.upcase}_LINK_DIRS_RELEASE} #{dir})
+EOS
+          }
+          
+          f.puts <<EOS
+include(${CMAKE_CURRENT_LIST_DIR}/../#{@project_name}.cmake)
+EOS
+        }
+        
+        @windows_visual_studio_versions.each{|version|
+          @windows_archs.each{|arch|
+            mkdir( "#{version}_#{arch}_MD" ){
+              open( "CMakeLists.txt", "wb" ){|f|
+                f.puts <<EOS
+cmake_minimum_required(VERSION #{@cmake_version})
+
+include(${CMAKE_CURRENT_LIST_DIR}/../windows.cmake)
 EOS
               }
             }
@@ -823,15 +859,7 @@ EOS
                 f.puts <<EOS
 cmake_minimum_required(VERSION #{@cmake_version})
 
-set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} #{@c_flags[ :windows ][ :debug ].join( ' ' )}")
-set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} #{@cxx_flags[ :windows ][ :debug ].join( ' ' )}")
-set(CMAKE_LD_FLAGS_DEBUG "${CMAKE_LD_FLAGS_DEBUG} #{@ld_flags[ :windows ][ :debug ].join( ' ' )}")
-
-set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} #{@c_flags[ :windows ][ :release ].join( ' ' )}")
-set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} #{@cxx_flags[ :windows ][ :release ].join( ' ' )}")
-set(CMAKE_LD_FLAGS_RELEASE "${CMAKE_LD_FLAGS_RELEASE} #{@ld_flags[ :windows ][ :release ].join( ' ' )}")
-
-include(${CMAKE_CURRENT_LIST_DIR}/../../#{@project_name}.cmake)
+include(${CMAKE_CURRENT_LIST_DIR}/../windows.cmake)
 include(${CMAKE_CURRENT_LIST_DIR}/../windows_MT.cmake)
 EOS
               }
