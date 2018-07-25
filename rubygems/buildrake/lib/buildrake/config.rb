@@ -2,7 +2,7 @@ require "buildrake/command"
 
 module Buildrake
   class Config
-    include BuildrakeCommand
+    include Buildrake::Command
     
     def self.method_accessor( *names )
       names.each{|name|
@@ -301,8 +301,8 @@ EOS
       
       open( "#{@project_name}_rake.rb", "wb" ){|f|
         f.puts <<EOS
-require "buildrake/command"
-extend BuildrakeCommand
+require "buildrake"
+extend Buildrake::Command
 
 def xcodebuild( project, configuration, sdk, arch, build_dir, *args )
   sh( "xcodebuild -project \#{project} -configuration \#{configuration} -sdk \#{sdk} -arch \#{arch} CONFIGURATION_BUILD_DIR=\#{build_dir} \#{args.join( ' ' )}" )

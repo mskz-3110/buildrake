@@ -1,6 +1,3 @@
 require "buildrake/version"
 require "buildrake/config"
-
-module Buildrake
-  
-end
+require "buildrake/comment_class"
