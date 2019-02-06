@@ -4,6 +4,10 @@ module Buildrake
   class Config
     include Buildrake::Mash
     
+    def self.run( argv )
+      self.new.send( argv.shift, *argv ) if ! argv.empty?
+    end
+    
     def self.method_accessor( *names )
       names.each{|name|
         class_eval <<EOS
@@ -119,10 +123,6 @@ EOS
     
     def library( name, srcs, libs = [] )
       @libraries[ name ] = { :srcs => srcs, :libs => libs }
-    end
-    
-    def run( argv )
-      send( argv.shift, *argv ) if ! argv.empty?
     end
     
     def setup( *args )
