@@ -1,7 +1,7 @@
 require "fileutils"
 
 module Buildrake
-  module Command
+  module Mash
     extend self
     
     def sh( command, &block )
