@@ -22,7 +22,7 @@ EOS
     method_accessor :inc_dirs
     method_accessor :lib_dirs
     method_accessor :c_flags, :cxx_flags, :ld_flags
-    method_accessor :windows_archs, :windows_artifact_name, :windows_visual_studio_versions
+    method_accessor :windows_visual_studio_versions, :windows_runtimes, :windows_archs, :windows_artifact_name
     method_accessor :macos_archs, :ios_archs
     method_accessor :android_archs, :android_api_level
     method_accessor :cmake_version
@@ -42,14 +42,15 @@ EOS
       @cxx_flags = {}
       @ld_flags = {}
       
+      @windows_visual_studio_versions = [ 2012, 2013, 2015, 2017 ]
+      @windows_runtimes = [ "MT", "MD" ]
       @windows_archs = [ "Win32", "x64" ]
       @windows_artifact_name = "$(ARTIFACT_PREFIX)_$(CONFIGURATION)"
-      @windows_visual_studio_versions = [ 2012, 2013, 2015, 2017 ]
       
-      @macos_archs = [ "i386", "x86_64" ]
+      @macos_archs = [ "x86_64" ]
       @ios_archs = [ "armv7", "armv7s", "arm64" ]
       
-      @android_archs = [ "x86", "armeabi", "armeabi-v7a", "arm64-v8a" ]
+      @android_archs = [ "x86", "armeabi-v7a", "arm64-v8a" ]
       @android_api_level = 16
       
       @cmake_version = "2.8"
@@ -790,22 +791,6 @@ EOS
     
     def generate_windows_build_files
       mkdir( "windows" ){
-        open( "windows_MT.cmake", "wb" ){|f|
-          f.puts <<EOS
-set(VariableNames
-  CMAKE_C_FLAGS
-  CMAKE_C_FLAGS_DEBUG
-  CMAKE_C_FLAGS_RELEASE
-  CMAKE_CXX_FLAGS
-  CMAKE_CXX_FLAGS_DEBUG
-  CMAKE_CXX_FLAGS_RELEASE
-)
-foreach(VariableName ${VariableNames})
-  string(REPLACE "/MD" "/MT" ${VariableName} "${${VariableName}}")
-endforeach()
-EOS
-        }
-        
         open( "windows.cmake", "wb" ){|f|
           f.puts <<EOS
 set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} #{@c_flags[ :windows ][ :debug ].join( ' ' )}")
@@ -843,25 +828,28 @@ EOS
         }
         
         @windows_visual_studio_versions.each{|version|
-          @windows_archs.each{|arch|
-            mkdir( "#{version}_#{arch}_MD" ){
-              open( "CMakeLists.txt", "wb" ){|f|
-                f.puts <<EOS
+          @windows_runtimes.each{|runtime|
+            @windows_archs.each{|arch|
+              mkdir( "#{version}_#{runtime}_#{arch}" ){
+                open( "CMakeLists.txt", "wb" ){|f|
+                  f.puts <<EOS
 cmake_minimum_required(VERSION #{@cmake_version})
 
 include(${CMAKE_CURRENT_LIST_DIR}/../windows.cmake)
-EOS
-              }
-            }
-            
-            mkdir( "#{version}_#{arch}_MT" ){
-              open( "CMakeLists.txt", "wb" ){|f|
-                f.puts <<EOS
-cmake_minimum_required(VERSION #{@cmake_version})
 
-include(${CMAKE_CURRENT_LIST_DIR}/../windows.cmake)
-include(${CMAKE_CURRENT_LIST_DIR}/../windows_MT.cmake)
+set(Flags
+  CMAKE_C_FLAGS
+  CMAKE_C_FLAGS_DEBUG
+  CMAKE_C_FLAGS_RELEASE
+  CMAKE_CXX_FLAGS
+  CMAKE_CXX_FLAGS_DEBUG
+  CMAKE_CXX_FLAGS_RELEASE
+)
+foreach(Flag ${Flags})
+  string(REPLACE "/MD" "/#{runtime}" ${Flag} "${${Flag}}")
+endforeach()
 EOS
+                }
               }
             }
           }
@@ -893,8 +881,8 @@ environment:
 EOS
         
         @windows_visual_studio_versions.each{|version|
-          @windows_archs.each{|arch|
-            [ "MD", "MT" ].each{|option|
+          @windows_runtimes.each{|runtime|
+            @windows_archs.each{|arch|
               case version
               when 2012
                 f.puts <<EOS
@@ -918,9 +906,10 @@ EOS
 EOS
               end
               
+              artifact_prefix = "#{version}_#{runtime}_#{arch}"
               f.puts <<EOS
-      ARTIFACT_PREFIX: #{version}_#{arch}_#{option}
-      DIR: build\\windows\\#{version}_#{arch}_#{option}
+      ARTIFACT_PREFIX: #{artifact_prefix}
+      DIR: build\\windows\\#{artifact_prefix}
       PLATFORM: #{arch}
 EOS
               
