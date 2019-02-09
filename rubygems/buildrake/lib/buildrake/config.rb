@@ -127,7 +127,6 @@ EOS
     end
     
     def setup( *args )
-      generate_makefile
       generate
     end
     
@@ -194,23 +193,13 @@ EOS
       platforms
     end
     
-    def generate_makefile
-      open( "Makefile", "wb" ){|f|
-        f.puts <<EOS
-.PHONY: gen
-gen:
-	./buildrake generate
-
+    def help
+      puts <<EOS
+<build command list>
 EOS
-        [ :linux, :android, :macos, :ios, :windows ].each{|platform|
-          [ :debug, :release ].each{|configuration|
-            f.puts <<EOS
-.PHONY: #{platform}-#{configuration}
-#{platform}-#{configuration}:
-	./buildrake build #{platform} #{configuration}
-
-EOS
-          }
+      [ :linux, :android, :macos, :ios, :windows ].each{|platform|
+        [ :debug, :release ].each{|configuration|
+          puts "build #{platform} #{configuration}"
         }
       }
     end
