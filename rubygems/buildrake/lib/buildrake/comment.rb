@@ -66,5 +66,56 @@ module Buildrake
       }
       block.call( class_values ) if ! class_values[ :class_name ].empty?
     end
+    
+    def self.generate_class_code_type_cs( dll_name, class_values )
+      codes = []
+      codes.push <<EOS
+#if ! UNITY_EDITOR && ( UNITY_IOS || UNITY_WEBGL )
+  #define DLL_INTERNAL
+#endif
+
+using System;
+using System.Runtime.InteropServices;
+EOS
+      
+      codes.push "namespace #{class_values[ :namespace ]} {" if ! class_values[ :namespace ].empty?
+      codes.push "public class #{class_values[ :class_name ]} {"
+      
+      class_values[ :elements ].each{|element|
+        case element[ :type ]
+        when :callback
+          codes.push <<EOS.chomp
+  public delegate #{element[ :value ]};
+  
+EOS
+        when :api
+          codes.push <<EOS.chomp
+#if DLL_INTERNAL
+  [DllImport("__Internal")]
+#else
+  [DllImport("#{dll_name}")]
+#endif
+EOS
+          
+          if element.key?( :value )
+            codes.push <<EOS.chomp
+  static public extern #{element[ :value ][ :interface_code ]};
+  static public #{element[ :value ][ :class_interface_code ]}
+  
+EOS
+          end
+        when :code
+          codes.push <<EOS.chomp
+  #{element[ :value ]}
+  
+EOS
+        end
+      }
+      
+      codes.push "}" if ! class_values[ :namespace ].empty?
+      codes.push "}"
+      
+      codes.join( "\n" )
+    end
   end
 end
