@@ -84,5 +84,9 @@ module Buildrake
       end
       value
     end
+    
+    def pascalcase( name )
+      name.split( "_" ).map{|v| v.capitalize}.join
+    end
   end
 end
