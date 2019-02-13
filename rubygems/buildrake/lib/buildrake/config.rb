@@ -240,7 +240,8 @@ EOS
         @executes.each{|name, data|
           f.puts "set(#{@project_name.upcase}_EXE_#{name.upcase}_SRCS)"
           data[ :srcs ].each{|src|
-            f.puts "set(#{@project_name.upcase}_EXE_#{name.upcase}_SRCS ${#{@project_name.upcase}_EXE_#{name.upcase}_SRCS} ${#{@project_name.upcase}_ROOT_DIR}/#{src})"
+            src = "${#{@project_name.upcase}_ROOT_DIR}/#{src}" if src =~ /^\./
+            f.puts "set(#{@project_name.upcase}_EXE_#{name.upcase}_SRCS ${#{@project_name.upcase}_EXE_#{name.upcase}_SRCS} #{src})"
           }
           
           link_lib_names = []
@@ -263,7 +264,8 @@ EOS
         @libraries.each{|name, data|
           f.puts "set(#{@project_name.upcase}_LIB_#{name.upcase}_SRCS)"
           data[ :srcs ].each{|src|
-            f.puts "set(#{@project_name.upcase}_LIB_#{name.upcase}_SRCS ${#{@project_name.upcase}_LIB_#{name.upcase}_SRCS} ${#{@project_name.upcase}_ROOT_DIR}/#{src})"
+            src = "${#{@project_name.upcase}_ROOT_DIR}/#{src}" if src =~ /^\./
+            f.puts "set(#{@project_name.upcase}_LIB_#{name.upcase}_SRCS ${#{@project_name.upcase}_LIB_#{name.upcase}_SRCS} #{src})"
           }
           
           link_lib_names = []
@@ -674,7 +676,8 @@ EOS
             @executes.each{|name, data|
               f.puts "#{@project_name.upcase}_EXE_#{name.upcase}_SRCS :="
               data[ :srcs ].each{|src|
-                f.puts "#{@project_name.upcase}_EXE_#{name.upcase}_SRCS += $(#{@project_name.upcase}_ROOT_DIR)/#{src}"
+                src = "$(#{@project_name.upcase}_ROOT_DIR)/#{src}" if src =~ /^\./
+                f.puts "#{@project_name.upcase}_EXE_#{name.upcase}_SRCS += #{src}"
               }
               f.puts ""
               
@@ -699,7 +702,8 @@ EOS
             @libraries.each{|name, data|
               f.puts "#{@project_name.upcase}_LIB_#{name.upcase}_SRCS :="
               data[ :srcs ].each{|src|
-                f.puts "#{@project_name.upcase}_LIB_#{name.upcase}_SRCS += $(#{@project_name.upcase}_ROOT_DIR)/#{src}"
+                src = "$(#{@project_name.upcase}_ROOT_DIR)/#{src}" if src =~ /^\./
+                f.puts "#{@project_name.upcase}_LIB_#{name.upcase}_SRCS += #{src}"
               }
               
               ld_libs = []
