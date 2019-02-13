@@ -44,6 +44,10 @@ module Buildrake
           class_values[ :namespace ] = value
         when "class_name"
           class_values[ :class_name ] = value
+        when "enum_name"
+          class_values[ :elements ].push( { :type => :enum, :name => value, :values => [] } )
+        when "enum_value"
+          class_values[ :elements ].last[ :values ].push value
         when "api"
           if /(.+)\s(.+)\((.*)\)/ =~ value
             api = {
@@ -76,6 +80,7 @@ module Buildrake
 
 using System;
 using System.Runtime.InteropServices;
+using System.Diagnostics;
 EOS
       
       codes.push "namespace #{class_values[ :namespace ]} {" if ! class_values[ :namespace ].empty?
@@ -107,6 +112,13 @@ EOS
         when :code
           codes.push <<EOS.chomp
   #{element[ :value ]}
+  
+EOS
+        when :enum
+          codes.push <<EOS.chomp
+  public enum #{element[ :name ]} {
+    #{element[ :values ].join( ",\n    " )}
+  };
   
 EOS
         end
