@@ -48,6 +48,10 @@ module Buildrake
           class_values[ :elements ].push( { :type => :enum, :name => value, :values => [] } )
         when "enum_value"
           class_values[ :elements ].last[ :values ].push value
+        when "struct_name"
+          class_values[ :elements ].push( { :type => :struct, :name => value, :members => [] } )
+        when "struct_member"
+          class_values[ :elements ].last[ :members ].push value
         when "api"
           if /(.+)\s(.+)\((.*)\)/ =~ value
             api = {
@@ -118,6 +122,13 @@ EOS
           codes.push <<EOS.chomp
   public enum #{element[ :name ]} {
     #{element[ :values ].join( ",\n    " )}
+  };
+  
+EOS
+        when :struct
+          codes.push <<EOS.chomp
+  public struct #{element[ :name ]} {
+    public #{element[ :members ].join( ";\n    public " )};
   };
   
 EOS
