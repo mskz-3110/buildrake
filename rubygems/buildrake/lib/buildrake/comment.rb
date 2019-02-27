@@ -59,11 +59,12 @@ module Buildrake
               :name => $2,
               :args => $3.strip
             }
-            api[ :call_args ] = api[ :args ].split( "," ).map{|v| v.split( /\s/ ).last}.join( ", " )
             api[ :interface_code ] = "#{api[ :return_type ]} #{api[ :name ]}( #{api[ :args ]} )"
+            api[ :class_interface_code ] = "#{api[ :return_type ]} #{Mash.pascalcase( api[ :name ] )}( #{api[ :args ]} )"
+            api[ :call_args ] = api[ :args ].split( "," ).map{|v| v.split( /\s/ ).last}.join( ", " )
             api[ :call_code ] = "#{api[ :name ]}( #{api[ :call_args ]} )"
             return_code = ( "void" == api[ :return_type ] ) ? "" : "return "
-            api[ :class_interface_code ] = "#{api[ :return_type ]} #{Mash.pascalcase( api[ :name ] )}( #{api[ :args ]} ){ #{return_code}#{api[ :call_code ]}; }"
+            api[ :return_call_code ] = "#{return_code}#{api[ :call_code ]}"
             class_values[ :elements ].push( { :type => :api, :value => api } )
           else
             class_values[ :elements ].push( { :type => :api } )
@@ -107,11 +108,21 @@ EOS
 EOS
           
           if element.key?( :value )
-            codes.push <<EOS.chomp
-  static public extern #{element[ :value ][ :interface_code ]};
-  static public #{element[ :value ][ :class_interface_code ]}
+            api = element[ :value ]
+            case api[ :return_type ].downcase
+            when "string"
+              codes.push <<EOS.chomp
+  static public extern IntPtr #{api[ :name ]}( #{api[ :args ]} );
+  static public #{api[ :class_interface_code ]}{ return Marshal.PtrToStringAuto( #{api[ :call_code ]} ); }
   
 EOS
+            else
+              codes.push <<EOS.chomp
+  static public extern #{api[ :interface_code ]};
+  static public #{api[ :class_interface_code ]}{ #{api[ :return_call_code ]}; }
+  
+EOS
+            end
           end
         when :code
           codes.push <<EOS.chomp
