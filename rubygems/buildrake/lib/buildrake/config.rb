@@ -151,16 +151,15 @@ EOS
       }
     end
     
-    def download_lib( url, lib_dir )
+    def get_github_release( url, dir = pwd )
       require "nokogiri"
       require "open-uri"
-      mkdir( lib_dir ){
+      mkdir( dir ){
         document = Nokogiri::HTML.parse( open( url ).readlines.join )
         document.xpath( '//strong' ).children.each{|element|
           filename = element.text
           extname = extname( filename )
           case extname
-          when ""
           when ".zip"
             dirname = basename( filename, extname )
             rm( dirname ) if dir?( dirname )
@@ -170,7 +169,7 @@ EOS
             sh( "unzip #{filename}" )
             rm( filename )
           else
-            abort( "Unsupported extname: #{extname}" )
+            abort( "Unsupported extname: #{filename}.#{extname}" )
           end
         }
       }

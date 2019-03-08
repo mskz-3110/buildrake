@@ -88,5 +88,24 @@ module Buildrake
     def pascalcase( name )
       name.split( "_" ).map{|v| v.capitalize}.join
     end
+    
+    def os_type
+      os_type = RbConfig::CONFIG[ "host_os" ]
+      case os_type
+      when /darwin/
+        os_type = "macos"
+      when /linux/
+        os_type = "linux"
+      end
+      os_type
+    end
+    
+    def macos?
+      ( "macos" == os_type )
+    end
+    
+    def linux?
+      ( "linux" == os_type )
+    end
   end
 end
