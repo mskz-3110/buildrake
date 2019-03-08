@@ -40,6 +40,11 @@ module Buildrake
       FileUtils.rm_rf( path ) if file?( path ) || dir?( path )
     end
     
+    def rmkdir( dir, &block )
+      rm( dir )
+      mkdir( dir, &block )
+    end
+    
     def cp( src, dst )
       FileUtils.cp( src, dst )
     end

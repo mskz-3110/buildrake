@@ -131,7 +131,7 @@ EOS
     end
     
     def generate( *args )
-      mkdir( "build" ){
+      rmkdir( "build" ){
         generate_common_build_files
         generate_macos_build_files
         generate_ios_build_files
