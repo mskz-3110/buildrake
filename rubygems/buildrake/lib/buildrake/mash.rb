@@ -16,7 +16,7 @@ module Buildrake
     end
     
     def which?( name )
-      sh( "which #{name} > /dev/null" ){|status| return ( 0 == status )}
+      sh( "which #{name} &> /dev/null" ){|status| return ( 0 == status )}
     end
     
     def file?( path, &block )
