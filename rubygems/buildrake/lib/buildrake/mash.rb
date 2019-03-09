@@ -50,7 +50,11 @@ module Buildrake
     end
     
     def cp( src, dst )
-      FileUtils.cp( src, dst )
+      if dir?( src )
+        FileUtils.cp_r( src, dst )
+      else
+        FileUtils.cp( src, dst )
+      end
     end
     
     def mv( src, dst )
