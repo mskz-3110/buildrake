@@ -15,6 +15,10 @@ module Buildrake
       end
     end
     
+    def which?( name )
+      sh( "which #{name} > /dev/null" ){|status| return ( 0 == status )}
+    end
+    
     def file?( path, &block )
       is_exist = File.exists?( path )
       block.call( path ) if block_given? && is_exist
