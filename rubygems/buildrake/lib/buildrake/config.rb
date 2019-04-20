@@ -22,6 +22,7 @@ EOS
     method_accessor :inc_dirs
     method_accessor :lib_dirs
     method_accessor :c_flags, :cxx_flags, :ld_flags
+    method_accessor :platforms, :configs
     method_accessor :windows_visual_studio_versions, :windows_runtimes, :windows_archs, :windows_artifact_name
     method_accessor :macos_archs, :ios_archs
     method_accessor :android_archs, :android_api_level
@@ -42,6 +43,9 @@ EOS
       @cxx_flags = {}
       @ld_flags = {}
       
+      @platforms = [ :macos, :ios, :android, :linux, :windows ]
+      @configs = [ :debug, :release ]
+      
       @windows_visual_studio_versions = [ 2012, 2013, 2015, 2017 ]
       @windows_runtimes = [ "MT", "MD" ]
       @windows_archs = [ "Win32", "x64" ]
@@ -60,8 +64,8 @@ EOS
       @executes = {}
       @libraries = {}
       
-      [ :linux, :macos, :ios, :android, :windows ].each{|platform|
-        [ :debug, :release ].each{|configuration|
+      @platforms.each{|platform|
+        @configs.each{|config|
           c_flags   = []
           cxx_flags = []
           ld_flags  = []
@@ -71,7 +75,7 @@ EOS
             cxx_flags = c_flags.clone
           else
             c_flags = [ "-g -Wall" ]
-            case configuration
+            case config
             when :debug
               c_flags.push "-UNDEBUG"
             when :release
@@ -90,32 +94,32 @@ EOS
             end
           end
           
-          lib_dir( platform, configuration, [] )
-          c_flag( platform, configuration, c_flags )
-          cxx_flag( platform, configuration, cxx_flags )
-          ld_flag( platform, configuration, ld_flags )
+          lib_dir( platform, config, [] )
+          c_flag( platform, config, c_flags )
+          cxx_flag( platform, config, cxx_flags )
+          ld_flag( platform, config, ld_flags )
         }
       }
     end
     
-    def lib_dir( platform, configuration, dirs )
+    def lib_dir( platform, config, dirs )
       @lib_dirs[ platform ] = {} if ! @lib_dirs.key?( platform )
-      @lib_dirs[ platform ][ configuration ] = dirs
+      @lib_dirs[ platform ][ config ] = dirs
     end
     
-    def c_flag( platform, configuration, flags )
+    def c_flag( platform, config, flags )
       @c_flags[ platform ] = {} if ! @c_flags.key?( platform )
-      @c_flags[ platform ][ configuration ] = flags
+      @c_flags[ platform ][ config ] = flags
     end
     
-    def cxx_flag( platform, configuration, flags )
+    def cxx_flag( platform, config, flags )
       @cxx_flags[ platform ] = {} if ! @cxx_flags.key?( platform )
-      @cxx_flags[ platform ][ configuration ] = flags
+      @cxx_flags[ platform ][ config ] = flags
     end
     
-    def ld_flag( platform, configuration, flags )
+    def ld_flag( platform, config, flags )
       @ld_flags[ platform ] = {} if ! @ld_flags.key?( platform )
-      @ld_flags[ platform ][ configuration ] = flags
+      @ld_flags[ platform ][ config ] = flags
     end
     
     def execute( name, srcs, libs = [] )
@@ -140,10 +144,11 @@ EOS
         generate_windows_build_files
       }
       generate_appveyor_file
+      generate_rake_file
     end
     
-    def build( platform, configuration = "debug" )
-      env( "CONFIGURATION", configuration.capitalize )
+    def build( platform, config = "debug" )
+      env( "CONFIG", config.capitalize )
       platforms( platform ).each{|platform|
         chdir( "build/#{platform}" ){
           sh( "rake build" ) if file?( "Rakefile" )
@@ -169,12 +174,9 @@ EOS
     end
     
     def help
-      puts <<EOS
-<build command list>
-EOS
-      [ :linux, :android, :macos, :ios, :windows ].each{|platform|
-        [ :debug, :release ].each{|configuration|
-          puts "build #{platform} #{configuration}"
+      @platforms.each{|platform|
+        @configs.each{|config|
+          puts "rake build #{platform} #{config}"
         }
       }
     end
@@ -271,8 +273,8 @@ EOS
 require "buildrake"
 extend Buildrake::Mash
 
-def xcodebuild( project, configuration, sdk, arch, build_dir, *args )
-  sh( "xcodebuild -project \#{project} -configuration \#{configuration} -sdk \#{sdk} -arch \#{arch} CONFIGURATION_BUILD_DIR=\#{build_dir} \#{args.join( ' ' )}" )
+def xcodebuild( project, config, sdk, arch, build_dir, *args )
+  sh( "xcodebuild -project \#{project} -configuration \#{config} -sdk \#{sdk} -arch \#{arch} CONFIGURATION_BUILD_DIR=\#{build_dir} \#{args.join( ' ' )}" )
 end
 
 def lipo_create( input_libraries, output_library )
@@ -305,8 +307,8 @@ def platform_path( platform )
   path.nil? ? platform.to_s : path.chomp( '/' )
 end
 
-def lib_platform_path( platform, configuration )
-  "\#{platform_path( platform )}_\#{configuration}"
+def lib_platform_path( platform, config )
+  "\#{platform_path( platform )}_\#{config}"
 end
 
 def cmake_files( prefix = "" )
@@ -324,9 +326,9 @@ task :build do
   build
 end
 
-env( "CONFIGURATION", "Debug" ) if ! env?( "CONFIGURATION" )
-puts "CONFIGURATION=\#{env( 'CONFIGURATION' )}"
-env( "LIB_PLATFORM_PATH", "\#{lib_platform_path( basename( pwd ).to_sym, env( 'CONFIGURATION' ) )}" ) if ! env?( "LIB_PLATFORM_PATH" )
+env( "CONFIG", "Debug" ) if ! env?( "CONFIG" )
+puts "CONFIG=\#{env( 'CONFIG' )}"
+env( "LIB_PLATFORM_PATH", "\#{lib_platform_path( basename( pwd ).to_sym, env( 'CONFIG' ) )}" ) if ! env?( "LIB_PLATFORM_PATH" )
 puts "LIB_PLATFORM_PATH=\#{env( 'LIB_PLATFORM_PATH' )}"
 EOS
       }
@@ -381,14 +383,14 @@ EOS
 require File.expand_path( "../#{@project_name}_rake", File.dirname( __FILE__ ) )
 
 def cmake
-  configuration = env( "CONFIGURATION" )
-  sh( "cmake . -DCMAKE_BUILD_TYPE=\#{configuration} -G Xcode" )
+  config = env( "CONFIG" )
+  sh( "cmake . -DCMAKE_BUILD_TYPE=\#{config} -G Xcode" )
 end
 
 def build
-  configuration = env( "CONFIGURATION" )
+  config = env( "CONFIG" )
   #{@macos_archs}.each{|arch|
-    xcodebuild( "#{@project_name}.xcodeproj", configuration, "macosx", arch, "out/\#{arch}", "clean build" )
+    xcodebuild( "#{@project_name}.xcodeproj", config, "macosx", arch, "out/\#{arch}", "clean build" )
   }
   #{@libraries.keys}.each{|name|
     ["lib\#{name}.a", "lib\#{name}.dylib"].each{|library|
@@ -399,7 +401,7 @@ def build
   }
   
   src = dirname( __FILE__ )
-  dst = "\#{src}/../../lib/\#{lib_platform_path( :macos, configuration )}"
+  dst = "\#{src}/../../lib/\#{lib_platform_path( :macos, config )}"
   #{@libraries.keys}.each{|name|
     find( "lib\#{name}.*" ){|path|
       mkdir( dst )
@@ -467,19 +469,19 @@ EOS
 require File.expand_path( "../#{@project_name}_rake", File.dirname( __FILE__ ) )
 
 def cmake
-  configuration = env( "CONFIGURATION" )
-  sh( "cmake . -DCMAKE_BUILD_TYPE=\#{configuration} -G Xcode" )
+  config = env( "CONFIG" )
+  sh( "cmake . -DCMAKE_BUILD_TYPE=\#{config} -G Xcode" )
 end
 
 def build
   return if #{@libraries.empty?}
   
-  configuration = env( "CONFIGURATION" )
+  config = env( "CONFIG" )
   #{@macos_archs}.each{|arch|
-    xcodebuild( "#{@project_name}.xcodeproj", configuration, "iphonesimulator", arch, "out/\#{arch}", "clean build" )
+    xcodebuild( "#{@project_name}.xcodeproj", config, "iphonesimulator", arch, "out/\#{arch}", "clean build" )
   }
   #{@ios_archs}.each{|arch|
-    xcodebuild( "#{@project_name}.xcodeproj", configuration, "iphoneos", arch, "out/\#{arch}", "clean build" )
+    xcodebuild( "#{@project_name}.xcodeproj", config, "iphoneos", arch, "out/\#{arch}", "clean build" )
   }
   
   #{@libraries.keys}.each{|name|
@@ -491,7 +493,7 @@ def build
   }
   
   src = dirname( __FILE__ )
-  dst = "\#{src}/../../lib/\#{lib_platform_path( :ios, configuration)}"
+  dst = "\#{src}/../../lib/\#{lib_platform_path( :ios, config)}"
   #{@libraries.keys}.each{|name|
     find( "lib\#{name}.*" ){|path|
       mkdir( dst )
@@ -559,16 +561,16 @@ EOS
 require File.expand_path( "../#{@project_name}_rake", File.dirname( __FILE__ ) )
 
 def cmake
-  configuration = env( "CONFIGURATION" )
-  sh( "cmake . -DCMAKE_BUILD_TYPE=\#{configuration}" )
+  config = env( "CONFIG" )
+  sh( "cmake . -DCMAKE_BUILD_TYPE=\#{config}" )
 end
 
 def build
-  configuration = env( "CONFIGURATION" )
+  config = env( "CONFIG" )
   sh( "make" )
   
   src = "\#{dirname( __FILE__ )}"
-  dst = "\#{src}/../../lib/\#{lib_platform_path( :linux, configuration )}"
+  dst = "\#{src}/../../lib/\#{lib_platform_path( :linux, config )}"
   #{@libraries.keys}.each{|name|
     find( "lib\#{name}.*" ){|path|
       mkdir( dst )
@@ -724,8 +726,8 @@ def build
   android_stl = env( "ANDROID_STL" )
   puts "ANDROID_NDK=\#{android_ndk}"
   puts "ANDROID_STL=\#{android_stl}"
-  configuration = env( "CONFIGURATION" )
-  app_optim = configuration.downcase
+  config = env( "CONFIG" )
+  app_optim = config.downcase
   puts "APP_OPTIM=\#{app_optim}"
   ndk_build = "\#{android_ndk}/ndk-build -B NDK_LIBS_OUT=./out NDK_OUT=./out APP_OPTIM=\#{app_optim}"
   ndk_build = "\#{ndk_build} APP_STL=\#{android_stl}" if ! android_stl.nil?
@@ -738,7 +740,7 @@ def build
   }
   
   src = dirname( __FILE__ )
-  dst = "\#{src}/../../lib/\#{lib_platform_path( :android, configuration )}"
+  dst = "\#{src}/../../lib/\#{lib_platform_path( :android, config )}"
   #{@libraries.keys}.each{|name|
     find( "libs/**/lib\#{name}.*" ){|path|
       mkdir( "\#{dst}/\#{dirname( path )}" )
@@ -911,6 +913,46 @@ artifacts:
 
 skip_tags: true
 
+EOS
+      }
+    end
+    
+    def generate_rake_file
+      return if file?( "Rakefile" )
+      
+      open( "Rakefile", "wb" ){|f|
+        f.puts <<EOS
+require "buildrake"
+extend Buildrake::Mash
+
+ROOT_DIR = File.expand_path( ".", File.dirname( __FILE__ ) )
+
+class Config < Buildrake::Config
+  method_accessor :srcs
+  
+  def initialize( *args )
+    # Project name
+    super( "" )
+    
+    # Include
+    inc_dirs [ "\#{ROOT_DIR}/inc" ]
+    
+    # Library
+    @srcs = Dir.glob( "\#{ROOT_DIR}/src/**/*.c" )
+    library( project_name, srcs )
+    
+    @platforms.each{|platform|
+      @configs.each{|config|
+        lib_dirs = [ "./lib/$(LIB_PLATFORM_PATH)" ]
+        lib_dir( platform, config, lib_dirs )
+      }
+    }
+    
+    # Execute
+    libs = [  ]
+    execute( "", "\#{ROOT_DIR}/src/**/*.c", libs )
+  end
+end
 EOS
       }
     end
