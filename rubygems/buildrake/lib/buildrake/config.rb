@@ -151,30 +151,6 @@ EOS
       }
     end
     
-    def get_github_release( url, dir = pwd )
-      require "nokogiri"
-      require "open-uri"
-      mkdir( dir ){
-        document = Nokogiri::HTML.parse( open( url ).readlines.join )
-        document.xpath( '//strong' ).children.each{|element|
-          filename = element.text
-          extname = extname( filename )
-          case extname
-          when ".zip"
-            dirname = basename( filename, extname )
-            rm( dirname ) if dir?( dirname )
-            rm( filename ) if file?( filename )
-            url = url.gsub( /\/releases\/tag\//, "/releases/download/" ) if url =~ /^https\:\/\/github\.com\//
-            sh( "wget #{url}/#{filename}" )
-            sh( "unzip #{filename}" )
-            rm( filename )
-          else
-            abort( "Unsupported extname: #{filename}.#{extname}" )
-          end
-        }
-      }
-    end
-    
   private
     def platforms( *args )
       platforms = []
