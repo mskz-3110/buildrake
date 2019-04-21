@@ -113,7 +113,7 @@ EOS
             when "string"
               codes.push <<EOS.chomp
   static public extern IntPtr #{api[ :name ]}( #{api[ :args ]} );
-  static public #{api[ :class_interface_code ]}{ return Marshal.PtrToStringAuto( #{api[ :call_code ]} ); }
+  static public #{api[ :class_interface_code ]}{ return Marshal.PtrToStringAnsi( #{api[ :call_code ]} ); }
   
 EOS
             else
