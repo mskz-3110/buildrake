@@ -20,7 +20,11 @@ Or install it yourself as:
 
 ## Usage
 
-
+Generate Rakefile:
+```irb
+require 'buildrake'
+Buildrake::setup
+```
 
 ## Development
 

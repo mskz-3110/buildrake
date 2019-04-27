@@ -5,7 +5,7 @@ module Buildrake
     include Buildrake::Mash
     
     def self.run( argv )
-      self.new.send( argv.shift, *argv ) if ! argv.empty?
+      self.new.public_send( argv.shift, *argv ) if ! argv.empty?
     end
     
     def self.method_accessor( *names )
@@ -23,11 +23,10 @@ EOS
     method_accessor :lib_dirs
     method_accessor :c_flags, :cxx_flags, :ld_flags
     method_accessor :platforms, :configs
-    method_accessor :windows_visual_studio_versions, :windows_runtimes, :windows_archs, :windows_artifact_name
+    method_accessor :windows_visual_studio_versions, :windows_runtimes, :windows_archs
     method_accessor :macos_archs, :ios_archs
     method_accessor :android_archs, :android_api_level
     method_accessor :cmake_version
-    method_accessor :appveyor
     
     EXECUTE = "execute"
     LIBRARY = "library"
@@ -46,10 +45,9 @@ EOS
       @platforms = [ :macos, :ios, :android, :linux, :windows ]
       @configs = [ :debug, :release ]
       
-      @windows_visual_studio_versions = [ 2012, 2013, 2015, 2017 ]
+      @windows_visual_studio_versions = [ 2015, 2017 ]
       @windows_runtimes = [ "MT", "MD" ]
       @windows_archs = [ "Win32", "x64" ]
-      @windows_artifact_name = "$(ARTIFACT_PREFIX)_$(CONFIGURATION)"
       
       @macos_archs = [ "x86_64" ]
       @ios_archs = [ "armv7", "armv7s", "arm64" ]
@@ -58,8 +56,6 @@ EOS
       @android_api_level = 16
       
       @cmake_version = "2.8"
-      
-      @appveyor = nil
       
       @executes = {}
       @libraries = {}
@@ -130,28 +126,22 @@ EOS
       @libraries[ name ] = { :srcs => srcs, :libs => libs }
     end
     
-    def setup( *args )
+    def setup
       generate
     end
     
-    def generate( *args )
-      rmkdir( "build" ){
-        generate_common_build_files
-        generate_macos_build_files
-        generate_ios_build_files
-        generate_linux_build_files
-        generate_android_build_files
-        generate_windows_build_files
-      }
-      generate_appveyor_file
-      generate_rake_file
-    end
-    
-    def build( platform, config = "debug" )
-      env( "CONFIG", config.capitalize )
-      platforms( platform ).each{|platform|
+    def build
+      platforms( env( "PLATFORM" ) ).each{|platform|
         chdir( "build/#{platform}" ){
           sh( "rake build" ) if file?( "Rakefile" )
+        }
+      }
+    end
+    
+    def help
+      @platforms.each{|platform|
+        @configs.each{|config|
+          puts "PLATFORM=#{platform} CONFIG=#{config} rake build"
         }
       }
     end
@@ -173,11 +163,14 @@ EOS
       platforms
     end
     
-    def help
-      @platforms.each{|platform|
-        @configs.each{|config|
-          puts "rake build #{platform} #{config}"
-        }
+    def generate
+      rmkdir( "build" ){
+        generate_common_build_files
+        generate_macos_build_files
+        generate_ios_build_files
+        generate_linux_build_files
+        generate_android_build_files
+        generate_windows_build_files
       }
     end
     
@@ -320,9 +313,7 @@ task :build do
   find( cmake_files ){|path|
     rm( path )
   }
-  clean
   
-  cmake if ! find( "CMakeLists.txt" ).empty?
   build
 end
 
@@ -382,13 +373,9 @@ EOS
           f.puts <<EOS
 require File.expand_path( "../#{@project_name}_rake", File.dirname( __FILE__ ) )
 
-def cmake
-  config = env( "CONFIG" )
-  sh( "cmake . -DCMAKE_BUILD_TYPE=\#{config} -G Xcode" )
-end
-
 def build
   config = env( "CONFIG" )
+  sh( "cmake . -DCMAKE_BUILD_TYPE=\#{config} -G Xcode" )
   #{@macos_archs}.each{|arch|
     xcodebuild( "#{@project_name}.xcodeproj", config, "macosx", arch, "out/\#{arch}", "clean build" )
   }
@@ -407,12 +394,6 @@ def build
       mkdir( dst )
       mv( "\#{src}/\#{path}", dst )
     }
-  }
-end
-
-def clean
-  find( [ "out", "lib*.*", "*.build", "*.xcodeproj", "Debug", "Release" ] ){|path|
-    rm( path )
   }
 end
 EOS
@@ -468,15 +449,11 @@ EOS
           f.puts <<EOS
 require File.expand_path( "../#{@project_name}_rake", File.dirname( __FILE__ ) )
 
-def cmake
-  config = env( "CONFIG" )
-  sh( "cmake . -DCMAKE_BUILD_TYPE=\#{config} -G Xcode" )
-end
-
 def build
   return if #{@libraries.empty?}
   
   config = env( "CONFIG" )
+  sh( "cmake . -DCMAKE_BUILD_TYPE=\#{config} -G Xcode" )
   #{@macos_archs}.each{|arch|
     xcodebuild( "#{@project_name}.xcodeproj", config, "iphonesimulator", arch, "out/\#{arch}", "clean build" )
   }
@@ -499,12 +476,6 @@ def build
       mkdir( dst )
       mv( "\#{src}/\#{path}", dst )
     }
-  }
-end
-
-def clean
-  find( [ "out", "lib*.*", "*.build", "*.xcodeproj", "Debug", "Release" ] ){|path|
-    rm( path )
   }
 end
 EOS
@@ -560,13 +531,9 @@ EOS
           f.puts <<EOS
 require File.expand_path( "../#{@project_name}_rake", File.dirname( __FILE__ ) )
 
-def cmake
-  config = env( "CONFIG" )
-  sh( "cmake . -DCMAKE_BUILD_TYPE=\#{config}" )
-end
-
 def build
   config = env( "CONFIG" )
+  sh( "cmake . -DCMAKE_BUILD_TYPE=\#{config}" )
   sh( "make" )
   
   src = "\#{dirname( __FILE__ )}"
@@ -576,12 +543,6 @@ def build
       mkdir( dst )
       mv( "\#{src}/\#{path}", dst )
     }
-  }
-end
-
-def clean
-  find( [ "lib*.*" ] ){|path|
-    rm( path )
   }
 end
 EOS
@@ -748,12 +709,6 @@ def build
     }
   }
 end
-
-def clean
-  find( [ "out", "libs" ] ){|path|
-    rm( path )
-  }
-end
 EOS
         }
       }
@@ -817,6 +772,7 @@ set(Flags
 )
 foreach(Flag ${Flags})
   string(REPLACE "/MD" "/#{runtime}" ${Flag} "${${Flag}}")
+  string(REGEX REPLACE "/Z[a-zA-Z0-9]" "" ${Flag} "${${Flag}}")
 endforeach()
 EOS
                 }
@@ -830,130 +786,33 @@ EOS
 require File.expand_path( "../#{@project_name}_rake", File.dirname( __FILE__ ) )
 
 def build
-  # TODO
-end
-
-def clean
-  # TODO
-end
-EOS
+  config = env( "CONFIG" )
+  windows_visual_studio_version = env( "WINDOWS_VISUAL_STUDIO_VERSION" )
+  windows_runtime = env( "WINDOWS_RUNTIME" )
+  windows_arch = env( "WINDOWS_ARCH" )
+  cmake_generator = env( "CMAKE_GENERATOR" )
+  chdir( "\#{windows_visual_studio_version}_\#{windows_runtime}_\#{windows_arch}" ){
+    rmkdir( config ){
+      sh( "cmake .. -DCMAKE_BUILD_TYPE=\#{config} -G\\"\#{cmake_generator}\\" -A\\"\#{windows_arch}\\"" )
+      
+      sh( "msbuild #{@project_name}.sln /m /t:Rebuild /p:Configuration=\#{config} /p:Platform=\\"\#{windows_arch}\\"" )
+      
+      built_files = []
+      chdir( config ){
+        find( "\#{pwd}/*" ){|path|
+          built_files.push path
         }
       }
-    end
-    
-    def generate_appveyor_file
-      return if @appveyor.nil?
-      
-      open( @appveyor, "wb" ){|f|
-        f.puts <<EOS
-environment:
-  matrix:
-EOS
-        
-        @windows_visual_studio_versions.each{|version|
-          @windows_runtimes.each{|runtime|
-            @windows_archs.each{|arch|
-              case version
-              when 2012
-                f.puts <<EOS
-    - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2013
-      GENERATOR: "Visual Studio 11 2012"
-EOS
-              when 2013
-                f.puts <<EOS
-    - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2013
-      GENERATOR: "Visual Studio 12 2013"
-EOS
-              when 2015
-                f.puts <<EOS
-    - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2015
-      GENERATOR: "Visual Studio 14 2015"
-EOS
-              when 2017
-                f.puts <<EOS
-    - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2017
-      GENERATOR: "Visual Studio 15 2017"
-EOS
-              end
-              
-              artifact_prefix = "#{version}_#{runtime}_#{arch}"
-              f.puts <<EOS
-      ARTIFACT_PREFIX: #{artifact_prefix}
-      DIR: build\\windows\\#{artifact_prefix}
-      PLATFORM: #{arch}
-EOS
-              
-              f.puts ""
-            }
-          }
+      mkdir( "../../../../lib/windows/\#{windows_visual_studio_version}_\#{windows_runtime}_\#{windows_arch}_\#{config}" ){
+        built_files.each{|built_file|
+          mv( built_file, "\#{pwd}/." )
         }
-        
-        f.puts <<EOS
-configuration:
-  - Debug
-  - Release
-
-before_build:
-  - cd "%DIR%"
-  - cmake . -G"%GENERATOR%" -A"%PLATFORM%" -DCMAKE_BUILD_TYPE=%CONFIGURATION%
-
-build:
-  parallel: true
-
-after_build:
-  - dir
-  - dir "%CONFIGURATION%"
-  - mkdir artifacts
-  - rename "%CONFIGURATION%" "artifacts/#{@windows_artifact_name.gsub( /(\$\(|\))/, '%' )}"
-  - dir /S artifacts
-
-artifacts:
-  - path: $(DIR)\\artifacts
-    name: #{@windows_artifact_name}
-
-skip_tags: true
-
-EOS
-      }
-    end
-    
-    def generate_rake_file
-      return if file?( "Rakefile" )
-      
-      open( "Rakefile", "wb" ){|f|
-        f.puts <<EOS
-require "buildrake"
-extend Buildrake::Mash
-
-ROOT_DIR = File.expand_path( ".", File.dirname( __FILE__ ) )
-
-class Config < Buildrake::Config
-  method_accessor :srcs
-  
-  def initialize( *args )
-    # Project name
-    super( "" )
-    
-    # Include
-    inc_dirs [ "\#{ROOT_DIR}/inc" ]
-    
-    # Library
-    @srcs = Dir.glob( "\#{ROOT_DIR}/src/**/*.c" )
-    library( project_name, srcs )
-    
-    @platforms.each{|platform|
-      @configs.each{|config|
-        lib_dirs = [ "./lib/$(LIB_PLATFORM_PATH)" ]
-        lib_dir( platform, config, lib_dirs )
       }
     }
-    
-    # Execute
-    libs = [  ]
-    execute( "", "\#{ROOT_DIR}/src/**/*.c", libs )
-  end
+  }
 end
 EOS
+        }
       }
     end
   end
