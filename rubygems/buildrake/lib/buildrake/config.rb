@@ -296,6 +296,11 @@ def platform_path( platform )
       path = "android/\#{env( 'ANDROID_NDK' ).split( '-' ).last.chomp( '/' )}"
       path = "\#{path}_\#{env( 'ANDROID_STL' )}" if env?( 'ANDROID_STL' )
     end
+  when :windows
+    windows_visual_studio_version = env( "WINDOWS_VISUAL_STUDIO_VERSION" )
+    windows_runtime = env( "WINDOWS_RUNTIME" )
+    windows_arch = env( "WINDOWS_ARCH" )
+    path = "windows/\#{windows_visual_studio_version}_\#{windows_runtime}_\#{windows_arch}"
   end
   path.nil? ? platform.to_s : path.chomp( '/' )
 end
