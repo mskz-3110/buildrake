@@ -182,6 +182,7 @@ string(TOUPPER #{@project_name.upcase}_LINK_DIRS_${CMAKE_BUILD_TYPE} #{@project_
 set(#{@project_name.upcase}_LINK_DIRS ${${#{@project_name.upcase}_LINK_DIRS}})
 foreach(link_dir IN LISTS #{@project_name.upcase}_LINK_DIRS)
   message(#{@project_name.upcase}_LINK_DIRS=${link_dir})
+  link_directories(${link_dir})
 endforeach()
 
 project(#{@project_name})
@@ -216,12 +217,7 @@ EOS
           
           link_lib_names = []
           data[ :libs ].each{|name|
-            link_lib_name = "#{@project_name.upcase}_LIB_#{name.upcase}"
-            f.puts <<EOS
-find_library(#{link_lib_name} NAMES lib#{name}.a #{name} PATHS ${#{@project_name.upcase}_LINK_DIRS})
-message(#{link_lib_name}=${#{link_lib_name}})
-EOS
-            link_lib_names.push "${#{link_lib_name}}"
+            link_lib_names.push name
           }
           
           f.puts <<EOS
@@ -267,7 +263,18 @@ require "buildrake"
 extend Buildrake::Mash
 
 def xcodebuild( project, config, sdk, arch, build_dir, *args )
-  sh( "xcodebuild -project \#{project} -configuration \#{config} -sdk \#{sdk} -arch \#{arch} CONFIGURATION_BUILD_DIR=\#{build_dir} \#{args.join( ' ' )}" )
+  flags = [ "-fembed-bitcode" ]
+  case sdk
+  when "iphoneos"
+    flags.push "-miphoneos-version-min=8.0"
+  when "iphonesimulator"
+    flags.push "-mios-simulator-version-min=8.0"
+  when "macosx"
+    flags.push "-mmacosx-version-min=10.10"
+  end
+  args.push "MACOSX_DEPLOYMENT_TARGET=10.10"
+  args.push "IPHONEOS_DEPLOYMENT_TARGET=8.0"
+  sh( "xcodebuild -project \#{project} -configuration \#{config} -sdk \#{sdk} -arch \#{arch} CONFIGURATION_BUILD_DIR=\#{build_dir} \#{args.join( ' ' )} OTHER_CFLAGS=\\"\#{flags.join( ' ' )}\\" OTHER_CPLUSPLUSFLAGS=\\"\#{flags.join( ' ' )}\\"" )
 end
 
 def lipo_create( input_libraries, output_library )
@@ -279,16 +286,18 @@ def lipo_info( library )
   sh( "lipo -info \#{library}" )
 end
 
+def linux_name
+  # TODO
+  ""
+end
+
 def platform_path( platform )
-  path = nil
+  path = ""
   case platform
-  when :linux, :macos
-    case RUBY_PLATFORM
-    when /darwin/
-      path = "macos/\#{\`xcrun --sdk macosx --show-sdk-version\`.chomp}"
-    else
-      # TODO
-    end
+  when :linux
+    path = "linux/\#{linux_name}"
+  when :macos
+    path = "macos/\#{\`xcrun --sdk macosx --show-sdk-version\`.chomp}"
   when :ios
     path = "ios/\#{\`xcrun --sdk iphoneos --show-sdk-version\`.chomp}"
   when :android
@@ -302,7 +311,7 @@ def platform_path( platform )
     windows_arch = env( "WINDOWS_ARCH" )
     path = "windows/\#{windows_visual_studio_version}_\#{windows_runtime}_\#{windows_arch}"
   end
-  path.nil? ? platform.to_s : path.chomp( '/' )
+  path
 end
 
 def lib_platform_path( platform, config )
