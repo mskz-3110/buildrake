@@ -4,9 +4,9 @@ module Buildrake
   module Mash
     extend self
     
-    def sh( command, &block )
+    def sh( command, options = {}, &block )
       puts "[#{pwd}] #{command}"
-      system( command )
+      system( command, options )
       status = $?
       if block_given?
         block.call( status )

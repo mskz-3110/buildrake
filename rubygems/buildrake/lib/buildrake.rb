@@ -35,12 +35,20 @@ class Config < Buildrake::Config
     @platforms.each{|platform|
       @configs.each{|config|
         lib_dirs = [ "\#{ROOT_DIR}/lib/$(LIB_PLATFORM_PATH)" ]
+        case platform
+        when :android
+          lib_dirs = [ "\#{ROOT_DIR}/lib/android/$(ANDROID_NDK_VERSION)_$(CONFIG)" ]
+        end
         lib_dir( platform, config, lib_dirs )
       }
     }
     
     # Execute
-    libs = [  ]
+    if windows?
+      libs = [  ]
+    else
+      libs = [  ]
+    end
     execute( "", [ "\#{ROOT_DIR}/src/**/*.c" ], libs )
   end
 end
