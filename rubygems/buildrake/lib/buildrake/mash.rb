@@ -109,6 +109,8 @@ module Buildrake
         os_type = "macos"
       when /linux/
         os_type = "linux"
+      when /mingw/
+        os_type = "windows"
       end
       os_type
     end
@@ -119,6 +121,10 @@ module Buildrake
     
     def linux?
       ( "linux" == os_type )
+    end
+    
+    def windows?
+      ( "windows" == os_type )
     end
   end
 end

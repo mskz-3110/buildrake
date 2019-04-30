@@ -141,7 +141,14 @@ EOS
     def help
       @platforms.each{|platform|
         @configs.each{|config|
-          puts "PLATFORM=#{platform} CONFIG=#{config} rake build"
+          case platform
+          when :android
+            puts "ANDROID_NDK=/tmp/android-ndk-r10e PLATFORM=#{platform} CONFIG=#{config} rake build"
+            puts "ANDROID_NDK=/tmp/android-ndk-r10e ANDROID_STL=c++_static PLATFORM=#{platform} CONFIG=#{config} rake build"
+            puts "ANDROID_NDK=/tmp/android-ndk-r10e ANDROID_STL=gnustl_static PLATFORM=#{platform} CONFIG=#{config} rake build"
+          else
+            puts "PLATFORM=#{platform} CONFIG=#{config} rake build"
+          end
         }
       }
     end
@@ -152,15 +159,22 @@ EOS
       if args.empty?
         case RUBY_PLATFORM
         when /darwin/
-          platforms = [ :linux, :macos, :ios ]
+          platforms = [ :macos, :ios ]
         else
           platforms = [ :linux ]
         end
-        platforms.push :android if env?( "ANDROID_NDK" )
       else
         platforms = args
       end
       platforms
+    end
+    
+    def lib_name( name )
+      lib_name = name
+      if /lib([a-zA-Z0-9_]+)\.a/ =~ name
+        lib_name = $1
+      end
+      lib_name
     end
     
     def generate
@@ -263,7 +277,7 @@ require "buildrake"
 extend Buildrake::Mash
 
 def xcodebuild( project, config, sdk, arch, build_dir, *args )
-  flags = [ "-fembed-bitcode" ]
+  flags = []
   case sdk
   when "iphoneos"
     flags.push "-miphoneos-version-min=8.0"
@@ -301,9 +315,9 @@ def platform_path( platform )
   when :ios
     path = "ios/\#{\`xcrun --sdk iphoneos --show-sdk-version\`.chomp}"
   when :android
-    if env?( "ANDROID_NDK" )
-      path = "android/\#{env( 'ANDROID_NDK' ).split( '-' ).last.chomp( '/' )}"
-      path = "\#{path}_\#{env( 'ANDROID_STL' )}" if env?( 'ANDROID_STL' )
+    if env?( "ANDROID_NDK" ) && ! env( "ANDROID_NDK" ).empty?
+      path = "android/\#{env( 'ANDROID_NDK_VERSION' )}"
+      path = "\#{path}_\#{env( 'ANDROID_STL' )}" if env?( 'ANDROID_STL' ) && ! env( 'ANDROID_STL' ).empty?
     end
   when :windows
     windows_visual_studio_version = env( "WINDOWS_VISUAL_STUDIO_VERSION" )
@@ -332,8 +346,8 @@ task :build do
 end
 
 env( "CONFIG", "Debug" ) if ! env?( "CONFIG" )
-puts "CONFIG=\#{env( 'CONFIG' )}"
-env( "LIB_PLATFORM_PATH", "\#{lib_platform_path( basename( pwd ).to_sym, env( 'CONFIG' ) )}" ) if ! env?( "LIB_PLATFORM_PATH" )
+puts "CONFIG=\#{pascalcase( env( 'CONFIG' ) )}"
+env( "LIB_PLATFORM_PATH", "\#{lib_platform_path( basename( pwd ).to_sym, pascalcase( env( 'CONFIG' ) ) )}" ) if ! env?( "LIB_PLATFORM_PATH" )
 puts "LIB_PLATFORM_PATH=\#{env( 'LIB_PLATFORM_PATH' )}"
 EOS
       }
@@ -388,7 +402,7 @@ EOS
 require File.expand_path( "../#{@project_name}_rake", File.dirname( __FILE__ ) )
 
 def build
-  config = env( "CONFIG" )
+  config = pascalcase( env( "CONFIG" ) )
   sh( "cmake . -DCMAKE_BUILD_TYPE=\#{config} -G Xcode" )
   #{@macos_archs}.each{|arch|
     xcodebuild( "#{@project_name}.xcodeproj", config, "macosx", arch, "out/\#{arch}", "clean build" )
@@ -466,7 +480,7 @@ require File.expand_path( "../#{@project_name}_rake", File.dirname( __FILE__ ) )
 def build
   return if #{@libraries.empty?}
   
-  config = env( "CONFIG" )
+  config = pascalcase( env( "CONFIG" ) )
   sh( "cmake . -DCMAKE_BUILD_TYPE=\#{config} -G Xcode" )
   #{@macos_archs}.each{|arch|
     xcodebuild( "#{@project_name}.xcodeproj", config, "iphonesimulator", arch, "out/\#{arch}", "clean build" )
@@ -546,7 +560,7 @@ EOS
 require File.expand_path( "../#{@project_name}_rake", File.dirname( __FILE__ ) )
 
 def build
-  config = env( "CONFIG" )
+  config = pascalcase( env( "CONFIG" ) )
   sh( "cmake . -DCMAKE_BUILD_TYPE=\#{config}" )
   sh( "make" )
   
@@ -631,11 +645,15 @@ EOS
                 src = "$(#{@project_name.upcase}_ROOT_DIR)/#{src}" if src =~ /^\./
                 f.puts "#{@project_name.upcase}_EXE_#{name.upcase}_SRCS += #{src}"
               }
-              f.puts ""
               
               ld_libs = []
               data[ :libs ].each{|lib|
-                ld_libs.push "LOCAL_LDLIBS += -l#{lib}"
+                case extname( lib )
+                when ".a"
+                  ld_libs.push "LOCAL_LDLIBS += -l#{lib_name( lib )}"
+                else
+                  ld_libs.push "LOCAL_LDLIBS += -l#{lib}"
+                end
               }
               
               f.puts <<EOS
@@ -660,7 +678,12 @@ EOS
               
               ld_libs = []
               data[ :libs ].each{|lib|
-                ld_libs.push "LOCAL_LDLIBS += -l#{lib}"
+                case extname( lib )
+                when ".a"
+                  ld_libs.push "LOCAL_LDLIBS += -l#{lib_name( lib )}"
+                else
+                  ld_libs.push "LOCAL_LDLIBS += -l#{lib}"
+                end
               }
               
               f.puts <<EOS
@@ -701,11 +724,11 @@ def build
   android_stl = env( "ANDROID_STL" )
   puts "ANDROID_NDK=\#{android_ndk}"
   puts "ANDROID_STL=\#{android_stl}"
-  config = env( "CONFIG" )
+  config = pascalcase( env( "CONFIG" ) )
   app_optim = config.downcase
   puts "APP_OPTIM=\#{app_optim}"
   ndk_build = "\#{android_ndk}/ndk-build -B NDK_LIBS_OUT=./out NDK_OUT=./out APP_OPTIM=\#{app_optim}"
-  ndk_build = "\#{ndk_build} APP_STL=\#{android_stl}" if ! android_stl.nil?
+  ndk_build = "\#{ndk_build} APP_STL=\#{android_stl}" if ! android_stl.nil? && ! android_stl.empty?
   sh( ndk_build )
   rm( "libs" )
   find( [ "out/local/*/*.*" ] ).each{|path|
@@ -800,7 +823,7 @@ EOS
 require File.expand_path( "../#{@project_name}_rake", File.dirname( __FILE__ ) )
 
 def build
-  config = env( "CONFIG" )
+  config = pascalcase( env( "CONFIG" ) )
   windows_visual_studio_version = env( "WINDOWS_VISUAL_STUDIO_VERSION" )
   windows_runtime = env( "WINDOWS_RUNTIME" )
   windows_arch = env( "WINDOWS_ARCH" )
