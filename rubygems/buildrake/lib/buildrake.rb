@@ -6,6 +6,7 @@ require "buildrake/github"
 module Buildrake
   def self.setup
     generate_rakefile
+    generate_gitignore
   end
   
   def self.generate_rakefile
@@ -70,6 +71,22 @@ task :build do
   Config.run( [ "build" ] )
   exit( 0 )
 end
+EOS
+    }
+  end
+  
+  def self.generate_gitignore
+    return if Mash.file?( ".gitignore" )
+    
+    open( ".gitignore", "wb" ){|f|
+      f.puts <<EOS
+CMakeCache.txt
+CMakeFiles
+CMakeScripts
+cmake_install.cmake
+
+/build
+/lib
 EOS
     }
   end

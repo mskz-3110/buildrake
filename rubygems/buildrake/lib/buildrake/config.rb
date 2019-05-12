@@ -45,7 +45,7 @@ EOS
       @platforms = [ :macos, :ios, :android, :linux, :windows ]
       @configs = [ :debug, :release ]
       
-      @windows_visual_studio_versions = [ 2015, 2017 ]
+      @windows_visual_studio_versions = [ 2017 ]
       @windows_runtimes = [ "MT", "MD" ]
       @windows_archs = [ "Win32", "x64" ]
       
