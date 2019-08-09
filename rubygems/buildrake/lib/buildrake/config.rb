@@ -279,8 +279,19 @@ def platform_path( platform, config )
   path = ""
   case platform
   when "linux"
-    linux_name = ""
-    # TODO
+    if file?( "/etc/system-release" )
+      line = `head -n 1 /etc/system-release`
+    else
+      line = "unsupported"
+    end
+    values = line.split( "\s" )
+    linux_name = values.shift.downcase
+    values.each{|value|
+      if /^([0-9]+)\./ =~ value
+        linux_name = "\#{linux_name}\#{$1}"
+        break
+      end
+    }
     path = "linux/\#{linux_name}"
   when "macos"
     path = "macos/\#{\`xcrun --sdk macosx --show-sdk-version\`.chomp}"
