@@ -28,9 +28,6 @@ EOS
     method_accessor :android_archs, :android_api_level
     method_accessor :cmake_version
     
-    EXECUTE = "execute"
-    LIBRARY = "library"
-    
     def initialize( project_name )
       @project_name = project_name
       
@@ -129,14 +126,20 @@ EOS
     end
     
     def build
-      platforms( env( "PLATFORM" ) ).each{|platform|
+      platform = env( "PLATFORM" )
+      config = env( "CONFIG" )
+      if platform.nil? || config.nil?
+        help
+      else
         chdir( "build/#{platform}" ){
           sh( "rake build" ) if file?( "Rakefile" )
         }
-      }
+      end
     end
     
     def help
+      puts "rake setup"
+      puts "rake help"
       @platforms.each{|platform|
         @configs.each{|config|
           case platform
@@ -158,21 +161,6 @@ EOS
     end
     
   private
-    def platforms( *args )
-      platforms = []
-      if args.empty?
-        case RUBY_PLATFORM
-        when /darwin/
-          platforms = [ :macos, :ios ]
-        else
-          platforms = [ :linux ]
-        end
-      else
-        platforms = args
-      end
-      platforms
-    end
-    
     def lib_name( name )
       lib_name = name
       if /lib([a-zA-Z0-9_]+)\.a/ =~ name
@@ -206,12 +194,10 @@ endforeach()
 project(#{@project_name})
 
 set(CMAKE_EXE_LINKER_FLAGS_DEBUG "${CMAKE_EXE_LINKER_FLAGS_DEBUG} ${CMAKE_LD_FLAGS_DEBUG}")
-set(CMAKE_MODULE_LINKER_FLAGS_DEBUG "${CMAKE_MODULE_LINKER_FLAGS_DEBUG} ${CMAKE_LD_FLAGS_DEBUG}")
 set(CMAKE_SHARED_LINKER_FLAGS_DEBUG "${CMAKE_SHARED_LINKER_FLAGS_DEBUG} ${CMAKE_LD_FLAGS_DEBUG}")
 set(CMAKE_STATIC_LINKER_FLAGS_DEBUG "${CMAKE_STATIC_LINKER_FLAGS_DEBUG} ${CMAKE_LD_FLAGS_DEBUG}")
 
 set(CMAKE_EXE_LINKER_FLAGS_RELEASE "${CMAKE_EXE_LINKER_FLAGS_RELEASE} ${CMAKE_LD_FLAGS_RELEASE}")
-set(CMAKE_MODULE_LINKER_FLAGS_RELEASE "${CMAKE_MODULE_LINKER_FLAGS_RELEASE} ${CMAKE_LD_FLAGS_RELEASE}")
 set(CMAKE_SHARED_LINKER_FLAGS_RELEASE "${CMAKE_SHARED_LINKER_FLAGS_RELEASE} ${CMAKE_LD_FLAGS_RELEASE}")
 set(CMAKE_STATIC_LINKER_FLAGS_RELEASE "${CMAKE_STATIC_LINKER_FLAGS_RELEASE} ${CMAKE_LD_FLAGS_RELEASE}")
 
@@ -289,36 +275,28 @@ def lipo_info( library )
   sh( "lipo -info \#{library}" )
 end
 
-def linux_name
-  # TODO
-  ""
-end
-
-def platform_path( platform )
+def platform_path( platform, config )
   path = ""
   case platform
-  when :linux
+  when "linux"
+    linux_name = ""
+    # TODO
     path = "linux/\#{linux_name}"
-  when :macos
+  when "macos"
     path = "macos/\#{\`xcrun --sdk macosx --show-sdk-version\`.chomp}"
-  when :ios
+  when "ios"
     path = "ios/\#{\`xcrun --sdk iphoneos --show-sdk-version\`.chomp}"
-  when :android
-    if env?( "ANDROID_NDK" ) && ! env( "ANDROID_NDK" ).empty?
-      path = "android/\#{env( 'ANDROID_NDK_VERSION' )}"
-      path = "\#{path}_\#{env( 'ANDROID_STL' )}" if env?( 'ANDROID_STL' ) && ! env( 'ANDROID_STL' ).empty?
-    end
-  when :windows
+  when "android"
+    android_ndk_version = env( "ANDROID_NDK" ).split( '-' ).last.chomp( '/' )
+    path = "android/\#{android_ndk_version}"
+    path = "\#{path}_\#{env( 'ANDROID_STL' )}" if env?( 'ANDROID_STL' ) && ! env( 'ANDROID_STL' ).empty?
+  when "windows"
     windows_visual_studio_version = env( "WINDOWS_VISUAL_STUDIO_VERSION" )
     windows_runtime = env( "WINDOWS_RUNTIME" )
     windows_arch = env( "WINDOWS_ARCH" )
     path = "windows/\#{windows_visual_studio_version}_\#{windows_runtime}_\#{windows_arch}"
   end
-  path
-end
-
-def lib_platform_path( platform, config )
-  "\#{platform_path( platform )}_\#{config}"
+  "\#{path}_\#{config}"
 end
 
 def cmake_files( prefix = "" )
@@ -334,10 +312,14 @@ task :build do
   build
 end
 
-env( "CONFIG", "Debug" ) if ! env?( "CONFIG" )
-puts "CONFIG=\#{pascalcase( env( 'CONFIG' ) )}"
-env( "LIB_PLATFORM_PATH", "\#{lib_platform_path( basename( pwd ).to_sym, pascalcase( env( 'CONFIG' ) ) )}" ) if ! env?( "LIB_PLATFORM_PATH" )
-puts "LIB_PLATFORM_PATH=\#{env( 'LIB_PLATFORM_PATH' )}"
+if env?( "CONFIG" )
+  config = env( "CONFIG", pascalcase( env( 'CONFIG' ) ) )
+else
+  config = env( "CONFIG", "Debug" )
+end
+puts "CONFIG=\#{config}"
+env( "PLATFORM_PATH", "\#{platform_path( basename( pwd ), config )}" ) if ! env?( "PLATFORM_PATH" )
+puts "PLATFORM_PATH=\#{env( 'PLATFORM_PATH' )}"
 EOS
       }
     end
@@ -391,9 +373,9 @@ EOS
 require File.expand_path( "../#{@project_name}_rake", File.dirname( __FILE__ ) )
 
 def build
-  config = pascalcase( env( "CONFIG" ) )
-  lib_platform_path = lib_platform_path( :macos, config )
-  rmkdir( basename( lib_platform_path ) ){
+  config = env( "CONFIG" )
+  platform_path = platform_path( "macos", config )
+  rmkdir( basename( platform_path ) ){
     #{@macos_archs}.each{|arch|
       rmkdir( arch ){
         sh( "cmake ../.. -DCMAKE_BUILD_TYPE=\#{config} -DCMAKE_OSX_ARCHITECTURES=\#{arch}" )
@@ -410,11 +392,12 @@ def build
     }
     
     src = pwd
-    dst = "\#{src}/../../../lib/\#{lib_platform_path}"
+    dst = "\#{src}/../../../lib/\#{platform_path}"
     #{@libraries.keys}.each{|name|
       find( "lib\#{name}.*" ){|path|
-        mkdir( dst )
-        mv( "\#{src}/\#{path}", dst )
+        mkdir( dst ){
+          mv( "\#{src}/\#{path}", "." )
+        }
       }
     }
   }
@@ -475,9 +458,9 @@ require File.expand_path( "../#{@project_name}_rake", File.dirname( __FILE__ ) )
 def build
   return if #{@libraries.empty?}
   
-  config = pascalcase( env( "CONFIG" ) )
-  lib_platform_path = lib_platform_path( :ios, config )
-  rmkdir( basename( lib_platform_path ) ){
+  config = env( "CONFIG" )
+  platform_path = platform_path( "ios", config )
+  rmkdir( basename( platform_path ) ){
     #{@macos_archs}.each{|arch|
       rmkdir( arch ){
         sh( "cmake ../.. -DCMAKE_BUILD_TYPE=\#{config} -DCMAKE_OSX_ARCHITECTURES=\#{arch} -DCMAKE_OSX_SYSROOT=iphonesimulator" )
@@ -501,11 +484,12 @@ def build
     }
     
     src = pwd
-    dst = "\#{src}/../../../lib/\#{lib_platform_path}"
+    dst = "\#{src}/../../../lib/\#{platform_path}"
     #{@libraries.keys}.each{|name|
       find( "lib\#{name}.*" ){|path|
-        mkdir( dst )
-        mv( "\#{src}/\#{path}", dst )
+        mkdir( dst ){
+          mv( "\#{src}/\#{path}", "." )
+        }
       }
     }
   }
@@ -564,18 +548,19 @@ EOS
 require File.expand_path( "../#{@project_name}_rake", File.dirname( __FILE__ ) )
 
 def build
-  config = pascalcase( env( "CONFIG" ) )
-  lib_platform_path = lib_platform_path( :linux, config )
-  rmkdir( basename( lib_platform_path ) ){
+  config = env( "CONFIG" )
+  platform_path = platform_path( "linux", config )
+  rmkdir( basename( platform_path ) ){
     sh( "cmake .. -DCMAKE_BUILD_TYPE=\#{config}" )
     sh( "make clean all" )
     
     src = pwd
-    dst = "\#{src}/../../../lib/\#{lib_platform_path}"
+    dst = "\#{src}/../../../lib/\#{platform_path}"
     #{@libraries.keys}.each{|name|
       find( "lib\#{name}.*" ){|path|
-        mkdir( dst )
-        mv( "\#{src}/\#{path}", dst )
+        mkdir( dst ){
+          mv( "\#{src}/\#{path}", "." )
+        }
       }
     }
   }
@@ -727,34 +712,27 @@ require File.expand_path( "../#{@project_name}_rake", File.dirname( __FILE__ ) )
 def build
   android_ndk = env( "ANDROID_NDK" )
   abort( "Not found ANDROID_NDK: \#{android_ndk}" ) if android_ndk.nil? || ! dir?( android_ndk )
-  android_ndk_version = android_ndk.split( '-' ).last.chomp( '/' )
-  env( "ANDROID_NDK_VERSION", android_ndk_version )
   android_stl = env( "ANDROID_STL" )
   puts "ANDROID_NDK=\#{android_ndk}"
   puts "ANDROID_STL=\#{android_stl}"
-  config = pascalcase( env( "CONFIG" ) )
+  config = env( "CONFIG" )
   app_optim = config.downcase
   puts "APP_OPTIM=\#{app_optim}"
-  lib_platform_path = lib_platform_path( :android, config )
-  rmkdir( basename( lib_platform_path ) ){
+  platform_path = platform_path( "android", config )
+  rmkdir( basename( platform_path ) ){
     ndk_out_dir = "./ndk_out"
-    ndk_build = "\#{android_ndk}/ndk-build -B NDK_LIBS_OUT=\#{ndk_out_dir} NDK_OUT=\#{ndk_out_dir} APP_OPTIM=\#{app_optim}"
+    ndk_build = "\#{android_ndk}/ndk-build -B NDK_APP_DST_DIR='\#{ndk_out_dir}/${TARGET_ARCH_ABI}' NDK_OUT='\#{ndk_out_dir}' APP_OPTIM=\#{app_optim}"
     ndk_build = "\#{ndk_build} APP_STL=\#{android_stl}" if ! android_stl.nil? && ! android_stl.empty?
     sh( ndk_build )
     
-    rm( "libs" )
-    find( [ "\#{ndk_out_dir}/local/*/*.*" ] ).each{|path|
-      arch = basename( dirname( path ) )
-      mkdir( "libs/\#{arch}" )
-      cp( path, "libs/\#{arch}/." )
-    }
-    
     src = pwd
-    dst = "\#{src}/../../../lib/\#{lib_platform_path}"
+    dst = "\#{src}/../../../lib/\#{platform_path}/libs"
     #{@libraries.keys}.each{|name|
-      find( "libs/**/lib\#{name}.*" ){|path|
-        mkdir( "\#{dst}/\#{dirname( path )}" )
-        mv( "\#{src}/\#{path}", "\#{dst}/\#{path}" )
+      find( "\#{src}/\#{ndk_out_dir}/local/*/lib\#{name}.*" ){|path|
+        arch = basename( dirname( path ) )
+        mkdir( "\#{dst}/\#{arch}" ){
+          mv( path, "." )
+        }
       }
     }
   }
@@ -832,14 +810,14 @@ EOS
 require File.expand_path( "../#{@project_name}_rake", File.dirname( __FILE__ ) )
 
 def build
-  config = pascalcase( env( "CONFIG" ) )
+  config = env( "CONFIG" )
   windows_visual_studio_version = env( "WINDOWS_VISUAL_STUDIO_VERSION" )
   windows_runtime = env( "WINDOWS_RUNTIME" )
   windows_arch = env( "WINDOWS_ARCH" )
   cmake_generator = env( "CMAKE_GENERATOR" )
-  lib_platform_path = lib_platform_path( :windows, config )
-  rmkdir( basename( lib_platform_path ) ){
-    sh( "cmake ../\#{windows_runtime} -DCMAKE_BUILD_TYPE=\#{config} -G\\"\#{cmake_generator}\\" -A\\"\#{windows_arch}\\"" )
+  platform_path = platform_path( "windows", config )
+  rmkdir( basename( platform_path ) ){
+    sh( "cmake ../\#{windows_runtime} -DCMAKE_CONFIGURATION_TYPES=\#{config} -G\\"\#{cmake_generator}\\" -A\\"\#{windows_arch}\\"" )
     sh( "msbuild #{@project_name}.sln /m /t:Rebuild /p:Configuration=\#{config} /p:Platform=\\"\#{windows_arch}\\"" )
     
     built_files = []
@@ -848,9 +826,9 @@ def build
         built_files.push path
       }
     }
-    mkdir( "../../../lib/\#{lib_platform_path}" ){
+    mkdir( "../../../lib/\#{platform_path}" ){
       built_files.each{|built_file|
-        mv( built_file, "\#{pwd}/." )
+        mv( built_file, "." )
       }
     }
   }

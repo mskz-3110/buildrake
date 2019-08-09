@@ -79,8 +79,10 @@ module Buildrake
     def self.generate_class_code_type_cs( dll_name, class_values )
       codes = []
       codes.push <<EOS
-#if ! UNITY_EDITOR && ( UNITY_IOS || UNITY_WEBGL )
-  #define DLL_INTERNAL
+#if ! DLL_INTERNAL
+  #if ! UNITY_EDITOR && ( UNITY_IOS || UNITY_WEBGL )
+    #define DLL_INTERNAL
+  #endif
 #endif
 
 using System;
@@ -90,6 +92,13 @@ EOS
       
       codes.push "namespace #{class_values[ :namespace ]} {" if ! class_values[ :namespace ].empty?
       codes.push "public class #{class_values[ :class_name ]} {"
+      codes.push <<EOS.chomp
+#if DLL_INTERNAL
+  private const string DllName = "__Internal";
+#else
+  private const string DllName = "#{dll_name}";
+#endif
+EOS
       
       class_values[ :elements ].each{|element|
         case element[ :type ]
@@ -100,11 +109,7 @@ EOS
 EOS
         when :api
           codes.push <<EOS.chomp
-#if DLL_INTERNAL
-  [DllImport("__Internal")]
-#else
-  [DllImport("#{dll_name}")]
-#endif
+  [DllImport(DllName)]
 EOS
           
           if element.key?( :value )
