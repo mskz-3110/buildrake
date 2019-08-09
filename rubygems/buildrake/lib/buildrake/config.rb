@@ -468,8 +468,6 @@ EOS
 require File.expand_path( "../#{@project_name}_rake", File.dirname( __FILE__ ) )
 
 def build
-  return if #{@libraries.empty?}
-  
   config = env( "CONFIG" )
   platform_path = platform_path( "ios", config )
   rmkdir( basename( platform_path ) ){
