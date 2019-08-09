@@ -299,6 +299,7 @@ def platform_path( platform, config )
     path = "ios/\#{\`xcrun --sdk iphoneos --show-sdk-version\`.chomp}"
   when "android"
     android_ndk_version = env( "ANDROID_NDK" ).split( '-' ).last.chomp( '/' )
+    env( "ANDROID_NDK_VERSION", android_ndk_version )
     path = "android/\#{android_ndk_version}"
     path = "\#{path}_\#{env( 'ANDROID_STL' )}" if env?( 'ANDROID_STL' ) && ! env( 'ANDROID_STL' ).empty?
   when "windows"
