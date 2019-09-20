@@ -1,9 +1,5 @@
-require "buildrake/mash"
-
 module Buildrake
   class Config
-    include Buildrake::Mash
-    
     def self.run( argv )
       self.new.public_send( argv.shift, *argv ) if ! argv.empty?
     end
@@ -19,6 +15,7 @@ EOS
     end
     
     method_accessor :project_name
+    method_accessor :root_path
     method_accessor :inc_dirs
     method_accessor :lib_dirs
     method_accessor :c_flags, :cxx_flags, :ld_flags
@@ -28,8 +25,10 @@ EOS
     method_accessor :android_archs, :android_api_level
     method_accessor :cmake_version
     
-    def initialize( project_name )
+    def initialize( project_name, root_path )
       @project_name = project_name
+      
+      @root_path = root_path
       
       @inc_dirs = []
       
@@ -126,13 +125,13 @@ EOS
     end
     
     def build
-      platform = env( "PLATFORM" )
-      config = env( "CONFIG" )
+      platform = Rush.env( "PLATFORM" )
+      config = Rush.env( "CONFIG" )
       if platform.nil? || config.nil?
         help
       else
-        chdir( "build/#{platform}" ){
-          sh( "rake build" ) if file?( "Rakefile" )
+        Rush.changed( "build/#{platform}" ){
+          Rush.sh( "rake build" ) if Rush.file?( "Rakefile" )
         }
       end
     end
@@ -170,7 +169,7 @@ EOS
     end
     
     def generate
-      rmkdir( "build" ){
+      Rush.remaked( "build" ){
         generate_common_build_files
         generate_macos_build_files
         generate_ios_build_files
@@ -261,25 +260,24 @@ EOS
         }
       }
       
-      open( "#{@project_name}_rake.rb", "wb" ){|f|
+      open( "#{@project_name}.rb", "wb" ){|f|
         f.puts <<EOS
 require "buildrake"
-extend Buildrake::Mash
 
 def lipo_create( input_libraries, output_library )
   input_libraries = input_libraries.join( ' ' ) if input_libraries.kind_of?( Array )
-  sh( "lipo -create \#{input_libraries} -output \#{output_library}" )
+  Buildrake::Rush.sh( "lipo -create \#{input_libraries} -output \#{output_library}" )
 end
 
 def lipo_info( library )
-  sh( "lipo -info \#{library}" )
+  Buildrake::Rush.sh( "lipo -info \#{library}" )
 end
 
 def platform_path( platform, config )
   path = ""
   case platform
   when "linux"
-    if file?( "/etc/system-release" )
+    if Buildrake::Rush.file?( "/etc/system-release" )
       line = `head -n 1 /etc/system-release`
     else
       line = "unsupported"
@@ -298,14 +296,14 @@ def platform_path( platform, config )
   when "ios"
     path = "ios/\#{\`xcrun --sdk iphoneos --show-sdk-version\`.chomp}"
   when "android"
-    android_ndk_version = env( "ANDROID_NDK" ).split( '-' ).last.chomp( '/' )
-    env( "ANDROID_NDK_VERSION", android_ndk_version )
+    android_ndk_version = Buildrake::Rush.env( "ANDROID_NDK" ).split( '-' ).last.chomp( '/' )
+    Buildrake::Rush.env( "ANDROID_NDK_VERSION", android_ndk_version )
     path = "android/\#{android_ndk_version}"
-    path = "\#{path}_\#{env( 'ANDROID_STL' )}" if env?( 'ANDROID_STL' ) && ! env( 'ANDROID_STL' ).empty?
+    path = "\#{path}_\#{Buildrake::Rush.env( 'ANDROID_STL' )}" if Buildrake::Rush.env?( 'ANDROID_STL' ) && ! Buildrake::Rush.env( 'ANDROID_STL' ).empty?
   when "windows"
-    windows_visual_studio_version = env( "WINDOWS_VISUAL_STUDIO_VERSION" )
-    windows_runtime = env( "WINDOWS_RUNTIME" )
-    windows_arch = env( "WINDOWS_ARCH" )
+    windows_visual_studio_version = Buildrake::Rush.env( "WINDOWS_VISUAL_STUDIO_VERSION" )
+    windows_runtime = Buildrake::Rush.env( "WINDOWS_RUNTIME" )
+    windows_arch = Buildrake::Rush.env( "WINDOWS_ARCH" )
     path = "windows/\#{windows_visual_studio_version}_\#{windows_runtime}_\#{windows_arch}"
   end
   "\#{path}_\#{config}"
@@ -317,27 +315,27 @@ end
 
 desc "Build"
 task :build do
-  find( cmake_files ){|path|
-    rm( path )
+  Buildrake::Rush.find( cmake_files ){|path|
+    Buildrake::Rush.remove( path )
   }
   
   build
 end
 
-if env?( "CONFIG" )
-  config = env( "CONFIG", pascalcase( env( 'CONFIG' ) ) )
+if Buildrake::Rush.env?( "CONFIG" )
+  config = Buildrake::Rush.env( "CONFIG", Buildrake::Rush.pascal_case( Buildrake::Rush.env( 'CONFIG' ) ) )
 else
-  config = env( "CONFIG", "Debug" )
+  config = Buildrake::Rush.env( "CONFIG", "Debug" )
 end
 puts "CONFIG=\#{config}"
-env( "PLATFORM_PATH", "\#{platform_path( basename( pwd ), config )}" ) if ! env?( "PLATFORM_PATH" )
-puts "PLATFORM_PATH=\#{env( 'PLATFORM_PATH' )}"
+Buildrake::Rush.env( "PLATFORM_PATH", "\#{platform_path( Buildrake::Rush.base_name( Buildrake::Rush.full_dir_path ), config )}" ) if ! Buildrake::Rush.env?( "PLATFORM_PATH" )
+puts "PLATFORM_PATH=\#{Buildrake::Rush.env( 'PLATFORM_PATH' )}"
 EOS
       }
     end
     
     def generate_macos_build_files
-      mkdir( "macos" ){
+      Rush.maked( "macos" ){
         open( "CMakeLists.txt", "wb" ){|f|
           f.puts <<EOS
 cmake_minimum_required(VERSION #{@cmake_version})
@@ -382,33 +380,33 @@ EOS
         
         open( "Rakefile", "wb" ){|f|
           f.puts <<EOS
-require File.expand_path( "../#{@project_name}_rake", File.dirname( __FILE__ ) )
+require File.expand_path( "../#{@project_name}", File.dirname( __FILE__ ) )
 
 def build
-  config = env( "CONFIG" )
+  config = Buildrake::Rush.env( "CONFIG" )
   platform_path = platform_path( "macos", config )
-  rmkdir( basename( platform_path ) ){
+  Buildrake::Rush.remaked( Buildrake::Rush.base_name( platform_path ) ){
     #{@macos_archs}.each{|arch|
-      rmkdir( arch ){
-        sh( "cmake ../.. -DCMAKE_BUILD_TYPE=\#{config} -DCMAKE_OSX_ARCHITECTURES=\#{arch}" )
-        sh( "make clean all" )
+      Buildrake::Rush.remaked( arch ){
+        Buildrake::Rush.sh( "cmake ../.. -DCMAKE_BUILD_TYPE=\#{config} -DCMAKE_OSX_ARCHITECTURES=\#{arch}" )
+        Buildrake::Rush.sh( "make clean all" )
       }
     }
     
     #{@libraries.keys}.each{|name|
       ["lib\#{name}.a", "lib\#{name}.dylib"].each{|library|
-        ext = extname( library )
-        lipo_create( "*/*\#{ext}", library )
+        ext_name = Buildrake::Rush.ext_name( library )
+        lipo_create( "*/*.\#{ext_name}", library )
         lipo_info( library )
       }
     }
     
-    src = pwd
+    src = Buildrake::Rush.full_dir_path
     dst = "\#{src}/../../../lib/\#{platform_path}"
     #{@libraries.keys}.each{|name|
-      find( "lib\#{name}.*" ){|path|
-        mkdir( dst ){
-          mv( "\#{src}/\#{path}", "." )
+      Buildrake::Rush.find( "lib\#{name}.*" ){|path|
+        Buildrake::Rush.maked( dst ){
+          Buildrake::Rush.rename( "\#{src}/\#{path}", "." )
         }
       }
     }
@@ -420,7 +418,7 @@ EOS
     end
     
     def generate_ios_build_files
-      mkdir( "ios" ){
+      Rush.maked( "ios" ){
         open( "CMakeLists.txt", "wb" ){|f|
           f.puts <<EOS
 cmake_minimum_required(VERSION #{@cmake_version})
@@ -465,40 +463,40 @@ EOS
         
         open( "Rakefile", "wb" ){|f|
           f.puts <<EOS
-require File.expand_path( "../#{@project_name}_rake", File.dirname( __FILE__ ) )
+require File.expand_path( "../#{@project_name}", File.dirname( __FILE__ ) )
 
 def build
-  config = env( "CONFIG" )
+  config = Buildrake::Rush.env( "CONFIG" )
   platform_path = platform_path( "ios", config )
-  rmkdir( basename( platform_path ) ){
+  Buildrake::Rush.remaked( Buildrake::Rush.base_name( platform_path ) ){
     #{@macos_archs}.each{|arch|
-      rmkdir( arch ){
-        sh( "cmake ../.. -DCMAKE_BUILD_TYPE=\#{config} -DCMAKE_OSX_ARCHITECTURES=\#{arch} -DCMAKE_OSX_SYSROOT=iphonesimulator" )
-        sh( "make clean all" )
+      Buildrake::Rush.remaked( arch ){
+        Buildrake::Rush.sh( "cmake ../.. -DCMAKE_BUILD_TYPE=\#{config} -DCMAKE_OSX_ARCHITECTURES=\#{arch} -DCMAKE_OSX_SYSROOT=iphonesimulator" )
+        Buildrake::Rush.sh( "make clean all" )
       }
     }
     
     #{@ios_archs}.each{|arch|
-      rmkdir( arch ){
-        sh( "cmake ../.. -DCMAKE_BUILD_TYPE=\#{config} -DCMAKE_OSX_ARCHITECTURES=\#{arch} -DCMAKE_OSX_SYSROOT=iphoneos" )
-        sh( "make clean all" )
+      Buildrake::Rush.remaked( arch ){
+        Buildrake::Rush.sh( "cmake ../.. -DCMAKE_BUILD_TYPE=\#{config} -DCMAKE_OSX_ARCHITECTURES=\#{arch} -DCMAKE_OSX_SYSROOT=iphoneos" )
+        Buildrake::Rush.sh( "make clean all" )
       }
     }
     
     #{@libraries.keys}.each{|name|
       ["lib\#{name}.a", "lib\#{name}.dylib"].each{|library|
-        ext = extname( library )
-        lipo_create( "*/*\#{ext}", library )
+        ext_name = Buildrake::Rush.ext_name( library )
+        lipo_create( "*/*.\#{ext_name}", library )
         lipo_info( library )
       }
     }
     
-    src = pwd
+    src = Buildrake::Rush.full_dir_path
     dst = "\#{src}/../../../lib/\#{platform_path}"
     #{@libraries.keys}.each{|name|
-      find( "lib\#{name}.*" ){|path|
-        mkdir( dst ){
-          mv( "\#{src}/\#{path}", "." )
+      Buildrake::Rush.find( "lib\#{name}.*" ){|path|
+        Buildrake::Rush.maked( dst ){
+          Buildrake::Rush.rename( "\#{src}/\#{path}", "." )
         }
       }
     }
@@ -510,7 +508,7 @@ EOS
     end
     
     def generate_linux_build_files
-      mkdir( "linux" ){
+      Rush.maked( "linux" ){
         open( "CMakeLists.txt", "wb" ){|f|
           f.puts <<EOS
 cmake_minimum_required(VERSION #{@cmake_version})
@@ -555,21 +553,21 @@ EOS
         
         open( "Rakefile", "wb" ){|f|
           f.puts <<EOS
-require File.expand_path( "../#{@project_name}_rake", File.dirname( __FILE__ ) )
+require File.expand_path( "../#{@project_name}", File.dirname( __FILE__ ) )
 
 def build
-  config = env( "CONFIG" )
+  config = Buildrake::Rush.env( "CONFIG" )
   platform_path = platform_path( "linux", config )
-  rmkdir( basename( platform_path ) ){
-    sh( "cmake .. -DCMAKE_BUILD_TYPE=\#{config}" )
-    sh( "make clean all" )
+  Buildrake::Rush.remaked( Buildrake::Rush.base_name( platform_path ) ){
+    Buildrake::Rush.sh( "cmake .. -DCMAKE_BUILD_TYPE=\#{config}" )
+    Buildrake::Rush.sh( "make clean all" )
     
-    src = pwd
+    src = Buildrake::Rush.full_dir_path
     dst = "\#{src}/../../../lib/\#{platform_path}"
     #{@libraries.keys}.each{|name|
-      find( "lib\#{name}.*" ){|path|
-        mkdir( dst ){
-          mv( "\#{src}/\#{path}", "." )
+      Buildrake::Rush.find( "lib\#{name}.*" ){|path|
+        Buildrake::Rush.maked( dst ){
+          Buildrake::Rush.rename( "\#{src}/\#{path}", "." )
         }
       }
     }
@@ -582,8 +580,8 @@ EOS
     
     def generate_android_build_files
       project_name = @project_name.upcase
-      mkdir( "android" ){
-        mkdir( "jni" ){
+      Rush.maked( "android" ){
+        Rush.maked( "jni" ){
           open( "Application.mk", "wb" ){|f|
             modules = []
             @executes.each{|name, data|
@@ -650,8 +648,8 @@ EOS
               
               ld_libs = []
               data[ :libs ].each{|lib|
-                case extname( lib )
-                when ".a"
+                case Rush.ext_name( lib )
+                when "a"
                   ld_libs.push "LOCAL_LDLIBS += -l#{lib_name( lib )}"
                 else
                   ld_libs.push "LOCAL_LDLIBS += -l#{lib}"
@@ -680,8 +678,8 @@ EOS
               
               ld_libs = []
               data[ :libs ].each{|lib|
-                case extname( lib )
-                when ".a"
+                case Rush.ext_name( lib )
+                when "a"
                   ld_libs.push "LOCAL_LDLIBS += -l#{lib_name( lib )}"
                 else
                   ld_libs.push "LOCAL_LDLIBS += -l#{lib}"
@@ -717,31 +715,31 @@ EOS
         
         open( "Rakefile", "wb" ){|f|
           f.puts <<EOS
-require File.expand_path( "../#{@project_name}_rake", File.dirname( __FILE__ ) )
+require File.expand_path( "../#{@project_name}", File.dirname( __FILE__ ) )
 
 def build
-  android_ndk = env( "ANDROID_NDK" )
-  abort( "Not found ANDROID_NDK: \#{android_ndk}" ) if android_ndk.nil? || ! dir?( android_ndk )
-  android_stl = env( "ANDROID_STL" )
+  android_ndk = Buildrake::Rush.env( "ANDROID_NDK" )
+  abort( "Not found ANDROID_NDK: \#{android_ndk}" ) if android_ndk.nil? || ! Buildrake::Rush.dir?( android_ndk )
+  android_stl = Buildrake::Rush.env( "ANDROID_STL" )
   puts "ANDROID_NDK=\#{android_ndk}"
   puts "ANDROID_STL=\#{android_stl}"
-  config = env( "CONFIG" )
+  config = Buildrake::Rush.env( "CONFIG" )
   app_optim = config.downcase
   puts "APP_OPTIM=\#{app_optim}"
   platform_path = platform_path( "android", config )
-  rmkdir( basename( platform_path ) ){
+  Buildrake::Rush.remaked( Buildrake::Rush.base_name( platform_path ) ){
     ndk_out_dir = "./ndk_out"
     ndk_build = "\#{android_ndk}/ndk-build -B NDK_APP_DST_DIR='\#{ndk_out_dir}/${TARGET_ARCH_ABI}' NDK_OUT='\#{ndk_out_dir}' APP_OPTIM=\#{app_optim}"
     ndk_build = "\#{ndk_build} APP_STL=\#{android_stl}" if ! android_stl.nil? && ! android_stl.empty?
-    sh( ndk_build )
+    Buildrake::Rush.sh( ndk_build )
     
-    src = pwd
+    src = Buildrake::Rush.full_dir_path
     dst = "\#{src}/../../../lib/\#{platform_path}/libs"
     #{@libraries.keys}.each{|name|
-      find( "\#{src}/\#{ndk_out_dir}/local/*/lib\#{name}.*" ){|path|
-        arch = basename( dirname( path ) )
-        mkdir( "\#{dst}/\#{arch}" ){
-          mv( path, "." )
+      Buildrake::Rush.find( "\#{src}/\#{ndk_out_dir}/local/*/lib\#{name}.*" ){|path|
+        arch = Buildrake::Rush.base_name( Buildrake::Rush.dir_path( path ) )
+        Buildrake::Rush.maked( "\#{dst}/\#{arch}" ){
+          Buildrake::Rush.rename( path, "." )
         }
       }
     }
@@ -753,7 +751,7 @@ EOS
     end
     
     def generate_windows_build_files
-      mkdir( "windows" ){
+      Rush.maked( "windows" ){
         open( "windows.cmake", "wb" ){|f|
           f.puts <<EOS
 set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} #{@c_flags[ :windows ][ :debug ].join( ' ' )}")
@@ -791,7 +789,7 @@ EOS
         }
         
         @windows_runtimes.each{|runtime|
-          mkdir( "#{runtime}" ){
+          Rush.maked( "#{runtime}" ){
             open( "CMakeLists.txt", "wb" ){|f|
               f.puts <<EOS
 cmake_minimum_required(VERSION #{@cmake_version})
@@ -817,28 +815,28 @@ EOS
         
         open( "Rakefile", "wb" ){|f|
           f.puts <<EOS
-require File.expand_path( "../#{@project_name}_rake", File.dirname( __FILE__ ) )
+require File.expand_path( "../#{@project_name}", File.dirname( __FILE__ ) )
 
 def build
-  config = env( "CONFIG" )
-  windows_visual_studio_version = env( "WINDOWS_VISUAL_STUDIO_VERSION" )
-  windows_runtime = env( "WINDOWS_RUNTIME" )
-  windows_arch = env( "WINDOWS_ARCH" )
-  cmake_generator = env( "CMAKE_GENERATOR" )
+  config = Buildrake::Rush.env( "CONFIG" )
+  windows_visual_studio_version = Buildrake::Rush.env( "WINDOWS_VISUAL_STUDIO_VERSION" )
+  windows_runtime = Buildrake::Rush.env( "WINDOWS_RUNTIME" )
+  windows_arch = Buildrake::Rush.env( "WINDOWS_ARCH" )
+  cmake_generator = Buildrake::Rush.env( "CMAKE_GENERATOR" )
   platform_path = platform_path( "windows", config )
-  rmkdir( basename( platform_path ) ){
-    sh( "cmake ../\#{windows_runtime} -DCMAKE_CONFIGURATION_TYPES=\#{config} -G\\"\#{cmake_generator}\\" -A\\"\#{windows_arch}\\"" )
-    sh( "msbuild #{@project_name}.sln /m /t:Rebuild /p:Configuration=\#{config} /p:Platform=\\"\#{windows_arch}\\"" )
+  Buildrake::Rush.remaked( Buildrake::Rush.base_name( platform_path ) ){
+    Buildrake::Rush.sh( "cmake ../\#{windows_runtime} -DCMAKE_CONFIGURATION_TYPES=\#{config} -G\\"\#{cmake_generator}\\" -A\\"\#{windows_arch}\\"" )
+    Buildrake::Rush.sh( "msbuild #{@project_name}.sln /m /t:Rebuild /p:Configuration=\#{config} /p:Platform=\\"\#{windows_arch}\\"" )
     
     built_files = []
-    chdir( config ){
-      find( "\#{pwd}/*" ){|path|
+    Buildrake::Rush.changed( config ){
+      Buildrake::Rush.find( "\#{Buildrake::Rush.full_dir_path}/*" ){|path|
         built_files.push path
       }
     }
-    mkdir( "../../../lib/\#{platform_path}" ){
+    Buildrake::Rush.maked( "../../../lib/\#{platform_path}" ){
       built_files.each{|built_file|
-        mv( built_file, "." )
+        Buildrake::Rush.rename( built_file, "." )
       }
     }
   }

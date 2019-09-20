@@ -1,0 +1,120 @@
+module Buildrake
+  module Rush
+    extend self
+    
+    def sh( command, options = {}, &block )
+      caption = "[#{full_dir_path}] #{command}"
+      puts caption
+      system( command, options )
+      status = $?
+      if block_given?
+        block.call( status )
+      else
+        raise "Failed(#{status.exitstatus}): #{caption}" if 0 != status.exitstatus
+      end
+    end
+    
+    def which?( name )
+      Rush.sh( "which #{name}", :out => "/dev/null", :err => "/dev/null" ){|status| return ( 0 == status )}
+    end
+    
+    def file?( path )
+      File.exists?( path )
+    end
+    
+    def dir?( path )
+      Dir.exists?( path )
+    end
+    
+    def changed( path, &block )
+      Dir.chdir( path, &block )
+    end
+    
+    def maked( path, &block )
+      Rush.sh( "mkdir -p #{path}" ) if ! Rush.dir?( path )
+      Rush.changed( path, &block )
+    end
+    
+    def remaked( path, &block )
+      Rush.remove( path )
+      Rush.maked( path, &block )
+    end
+    
+    def copy( src, dst )
+      Rush.sh( "cp -r #{src} #{dst}" )
+    end
+    
+    def rename( src, dst )
+      Rush.sh( "mv #{src} #{dst}" )
+    end
+    
+    def remove( path )
+      Rush.sh( "rm -fr #{path}" ) if Rush.file?( path ) || Rush.dir?( path )
+    end
+    
+    def find( pattern, &block )
+      Dir.glob( pattern, &block )
+    end
+    
+    def base_name( path )
+      File.basename( path )
+    end
+    
+    def ext_name( path )
+      File.extname( path ).gsub( /^\./, "" )
+    end
+    
+    def dir_path( path )
+      File.dirname( path )
+    end
+    
+    def full_dir_path( path = "." )
+      Rush.changed( path ){
+        path = Dir.pwd
+      }
+      path
+    end
+    
+    def env?( key )
+      ENV.key?( key )
+    end
+    
+    def env( key, value = nil )
+      if value.nil? && Rush.env?( key )
+        value = ENV[ key ]
+      else
+        ENV[ key ] = value
+      end
+      value
+    end
+    
+    def pascal_case( name )
+      name.split( "_" ).map{|v| v.capitalize}.join
+    end
+    
+    def os_type
+      os_type = RbConfig::CONFIG[ "host_os" ]
+      case os_type
+      when /darwin/
+        os_type = "macos"
+      when /linux/
+        os_type = "linux"
+      when /mingw/
+        os_type = "windows"
+      end
+      os_type
+    end
+    
+    def macos?
+      ( "macos" == Rush.os_type )
+    end
+    
+    def linux?
+      ( "linux" == Rush.os_type )
+    end
+    
+    def windows?
+      ( "windows" == Rush.os_type )
+    end
+  end
+end

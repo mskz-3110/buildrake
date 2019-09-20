@@ -60,7 +60,7 @@ module Buildrake
               :args => $3.strip
             }
             api[ :interface_code ] = "#{api[ :return_type ]} #{api[ :name ]}( #{api[ :args ]} )"
-            api[ :class_interface_code ] = "#{api[ :return_type ]} #{Mash.pascalcase( api[ :name ] )}( #{api[ :args ]} )"
+            api[ :class_interface_code ] = "#{api[ :return_type ]} #{Rush.pascal_case( api[ :name ] )}( #{api[ :args ]} )"
             api[ :call_args ] = api[ :args ].split( "," ).map{|v| v.split( /\s/ ).last}.join( ", " )
             api[ :call_code ] = "#{api[ :name ]}( #{api[ :call_args ]} )"
             return_code = ( "void" == api[ :return_type ] ) ? "" : "return "
@@ -94,9 +94,9 @@ EOS
       codes.push "public class #{class_values[ :class_name ]} {"
       codes.push <<EOS.chomp
 #if DLL_INTERNAL
-  private const string DllName = "__Internal";
+  public const string DllName = "__Internal";
 #else
-  private const string DllName = "#{dll_name}";
+  public const string DllName = "#{dll_name}";
 #endif
 EOS
       

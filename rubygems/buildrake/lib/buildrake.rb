@@ -1,4 +1,5 @@
 require "buildrake/version"
+require "buildrake/rush"
 require "buildrake/config"
 require "buildrake/comment"
 require "buildrake/github"
@@ -10,47 +11,43 @@ module Buildrake
   end
   
   def self.generate_rakefile
-    return if Mash.file?( "Rakefile" )
+    return if Rush.file?( "Rakefile" )
     
     open( "Rakefile", "wb" ){|f|
       f.puts <<EOS
 require "buildrake"
-extend Buildrake::Mash
-
-ROOT_DIR = File.expand_path( ".", File.dirname( __FILE__ ) )
 
 class Config < Buildrake::Config
   method_accessor :srcs
   
   def initialize( *args )
-    # Project name
-    super( "" )
+    super( "", Buildrake::Rush.full_dir_path( Buildrake::Rush.dir_path( __FILE__ ) ) )
     
-    # Include
-    inc_dirs [ "\#{ROOT_DIR}/inc" ]
+    inc_dirs [ "\#{@root_path}/inc" ]
     
     # Library
-    @srcs = Dir.glob( "\#{ROOT_DIR}/src/**/*.c" )
-    library( project_name, srcs )
+    @srcs = [  ]
+    library( project_name, @srcs )
     
     @platforms.each{|platform|
       @configs.each{|config|
-        lib_dirs = [ "\#{ROOT_DIR}/lib/$(LIB_PLATFORM_PATH)" ]
         case platform
         when :android
-          lib_dirs = [ "\#{ROOT_DIR}/lib/android/$(ANDROID_NDK_VERSION)_$(CONFIG)" ]
+          lib_dirs = [ "\#{@root_path}/lib/android/$(ANDROID_NDK_VERSION)_$(CONFIG)" ]
+        else
+          lib_dirs = [ "\#{@root_path}/lib/$(PLATFORM_PATH)" ]
         end
         lib_dir( platform, config, lib_dirs )
       }
     }
     
     # Execute
-    if windows?
+    if Buildrake::Rush.windows?
       libs = [  ]
     else
       libs = [  ]
     end
-    execute( "", [ "\#{ROOT_DIR}/src/**/*.c" ], libs )
+    execute( "", [  ], libs )
   end
 end
 
@@ -76,15 +73,10 @@ EOS
   end
   
   def self.generate_gitignore
-    return if Mash.file?( ".gitignore" )
+    return if Rush.file?( ".gitignore" )
     
     open( ".gitignore", "wb" ){|f|
       f.puts <<EOS
-CMakeCache.txt
-CMakeFiles
-CMakeScripts
-cmake_install.cmake
-
 /build
 /lib
 EOS
