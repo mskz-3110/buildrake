@@ -1,3 +1,5 @@
+require "fileutils"
+
 module Buildrake
   module Rush
     extend self
@@ -31,7 +33,7 @@ module Buildrake
     end
     
     def maked( path, &block )
-      Rush.sh( "mkdir -p #{path}" ) if ! Rush.dir?( path )
+      FileUtils.mkdir_p( path ) if ! Rush.dir?( path )
       Rush.changed( path, &block )
     end
     
@@ -41,15 +43,15 @@ module Buildrake
     end
     
     def copy( src, dst )
-      Rush.sh( "cp -r #{src} #{dst}" )
+      FileUtils.cp_r( src, dst )
     end
     
     def rename( src, dst )
-      Rush.sh( "mv #{src} #{dst}" )
+      FileUtils.mv( src, dst )
     end
     
     def remove( path )
-      Rush.sh( "rm -fr #{path}" ) if Rush.file?( path ) || Rush.dir?( path )
+      FileUtils.rm_rf( path ) if Rush.file?( path ) || Rush.dir?( path )
     end
     
     def find( pattern, &block )

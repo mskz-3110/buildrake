@@ -340,6 +340,8 @@ EOS
           f.puts <<EOS
 cmake_minimum_required(VERSION #{@cmake_version})
 
+project(#{@project_name})
+
 if (${CMAKE_SYSTEM_NAME} STREQUAL "Darwin")
   set(CMAKE_MACOSX_RPATH 1)
 endif()
@@ -422,6 +424,8 @@ EOS
         open( "CMakeLists.txt", "wb" ){|f|
           f.puts <<EOS
 cmake_minimum_required(VERSION #{@cmake_version})
+
+project(#{@project_name})
 
 if (${CMAKE_SYSTEM_NAME} STREQUAL "Darwin")
   set(CMAKE_MACOSX_RPATH 1)
@@ -512,6 +516,8 @@ EOS
         open( "CMakeLists.txt", "wb" ){|f|
           f.puts <<EOS
 cmake_minimum_required(VERSION #{@cmake_version})
+
+project(#{@project_name})
 
 if (${CMAKE_SYSTEM_NAME} STREQUAL "Darwin")
   set(CMAKE_MACOSX_RPATH 1)
@@ -793,6 +799,8 @@ EOS
             open( "CMakeLists.txt", "wb" ){|f|
               f.puts <<EOS
 cmake_minimum_required(VERSION #{@cmake_version})
+
+project(#{@project_name})
 
 include(${CMAKE_CURRENT_LIST_DIR}/../windows.cmake)
 
