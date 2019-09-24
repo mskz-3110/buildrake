@@ -361,7 +361,6 @@ EOS
           
           @lib_dirs[ :macos ][ :debug ].each{|dir|
             dir = "${#{@project_name.upcase}_ROOT_DIR}/#{dir}" if dir =~ /^\./
-            dir = dir.gsub( /\(/, "ENV{" ).gsub( /\)/, "}" )
             f.puts <<EOS
 set(#{@project_name.upcase}_LINK_DIRS_DEBUG ${#{@project_name.upcase}_LINK_DIRS_DEBUG} #{dir})
 EOS
@@ -369,7 +368,6 @@ EOS
           
           @lib_dirs[ :macos ][ :release ].each{|dir|
             dir = "${#{@project_name.upcase}_ROOT_DIR}/#{dir}" if dir =~ /^\./
-            dir = dir.gsub( /\(/, "ENV{" ).gsub( /\)/, "}" )
             f.puts <<EOS
 set(#{@project_name.upcase}_LINK_DIRS_RELEASE ${#{@project_name.upcase}_LINK_DIRS_RELEASE} #{dir})
 EOS
@@ -390,7 +388,7 @@ def build
   Buildrake::Rush.remaked( Buildrake::Rush.base_name( platform_path ) ){
     #{@macos_archs}.each{|arch|
       Buildrake::Rush.remaked( arch ){
-        Buildrake::Rush.sh( "cmake ../.. -DCMAKE_BUILD_TYPE=\#{config} -DCMAKE_OSX_ARCHITECTURES=\#{arch}" )
+        Buildrake::Rush.sh( "cmake ../.. -DCMAKE_BUILD_TYPE=\#{config} -DCMAKE_OSX_ARCHITECTURES=\#{arch} --no-warn-unused-cli -DPLATFORM=macos -DCONFIG=\#{config} -DPLATFORM_PATH=\#{platform_path}" )
         Buildrake::Rush.sh( "make clean all" )
       }
     }
@@ -446,7 +444,6 @@ EOS
           
           @lib_dirs[ :ios ][ :debug ].each{|dir|
             dir = "${#{@project_name.upcase}_ROOT_DIR}/#{dir}" if dir =~ /^\./
-            dir = dir.gsub( /\(/, "ENV{" ).gsub( /\)/, "}" )
             f.puts <<EOS
 set(#{@project_name.upcase}_LINK_DIRS_DEBUG ${#{@project_name.upcase}_LINK_DIRS_DEBUG} #{dir})
 EOS
@@ -454,7 +451,6 @@ EOS
           
           @lib_dirs[ :ios ][ :release ].each{|dir|
             dir = "${#{@project_name.upcase}_ROOT_DIR}/#{dir}" if dir =~ /^\./
-            dir = dir.gsub( /\(/, "ENV{" ).gsub( /\)/, "}" )
             f.puts <<EOS
 set(#{@project_name.upcase}_LINK_DIRS_RELEASE ${#{@project_name.upcase}_LINK_DIRS_RELEASE} #{dir})
 EOS
@@ -475,14 +471,14 @@ def build
   Buildrake::Rush.remaked( Buildrake::Rush.base_name( platform_path ) ){
     #{@macos_archs}.each{|arch|
       Buildrake::Rush.remaked( arch ){
-        Buildrake::Rush.sh( "cmake ../.. -DCMAKE_BUILD_TYPE=\#{config} -DCMAKE_OSX_ARCHITECTURES=\#{arch} -DCMAKE_OSX_SYSROOT=iphonesimulator" )
+        Buildrake::Rush.sh( "cmake ../.. -DCMAKE_BUILD_TYPE=\#{config} -DCMAKE_OSX_ARCHITECTURES=\#{arch} -DCMAKE_OSX_SYSROOT=iphonesimulator --no-warn-unused-cli -DPLATFORM=ios -DCONFIG=\#{config} -DPLATFORM_PATH=\#{platform_path}" )
         Buildrake::Rush.sh( "make clean all" )
       }
     }
     
     #{@ios_archs}.each{|arch|
       Buildrake::Rush.remaked( arch ){
-        Buildrake::Rush.sh( "cmake ../.. -DCMAKE_BUILD_TYPE=\#{config} -DCMAKE_OSX_ARCHITECTURES=\#{arch} -DCMAKE_OSX_SYSROOT=iphoneos" )
+        Buildrake::Rush.sh( "cmake ../.. -DCMAKE_BUILD_TYPE=\#{config} -DCMAKE_OSX_ARCHITECTURES=\#{arch} -DCMAKE_OSX_SYSROOT=iphoneos --no-warn-unused-cli -DPLATFORM=ios -DCONFIG=\#{config} -DPLATFORM_PATH=\#{platform_path}" )
         Buildrake::Rush.sh( "make clean all" )
       }
     }
@@ -538,7 +534,6 @@ EOS
           
           @lib_dirs[ :linux ][ :debug ].each{|dir|
             dir = "${#{@project_name.upcase}_ROOT_DIR}/#{dir}" if dir =~ /^\./
-            dir = dir.gsub( /\(/, "ENV{" ).gsub( /\)/, "}" )
             f.puts <<EOS
 set(#{@project_name.upcase}_LINK_DIRS_DEBUG ${#{@project_name.upcase}_LINK_DIRS_DEBUG} #{dir})
 EOS
@@ -546,7 +541,6 @@ EOS
           
           @lib_dirs[ :linux ][ :release ].each{|dir|
             dir = "${#{@project_name.upcase}_ROOT_DIR}/#{dir}" if dir =~ /^\./
-            dir = dir.gsub( /\(/, "ENV{" ).gsub( /\)/, "}" )
             f.puts <<EOS
 set(#{@project_name.upcase}_LINK_DIRS_RELEASE ${#{@project_name.upcase}_LINK_DIRS_RELEASE} #{dir})
 EOS
@@ -565,7 +559,7 @@ def build
   config = Buildrake::Rush.env( "CONFIG" )
   platform_path = platform_path( "linux", config )
   Buildrake::Rush.remaked( Buildrake::Rush.base_name( platform_path ) ){
-    Buildrake::Rush.sh( "cmake .. -DCMAKE_BUILD_TYPE=\#{config}" )
+    Buildrake::Rush.sh( "cmake .. -DCMAKE_BUILD_TYPE=\#{config} --no-warn-unused-cli -DPLATFORM=linux -DCONFIG=\#{config} -DPLATFORM_PATH=\#{platform_path}" )
     Buildrake::Rush.sh( "make clean all" )
     
     src = Buildrake::Rush.full_dir_path
@@ -735,7 +729,7 @@ def build
   platform_path = platform_path( "android", config )
   Buildrake::Rush.remaked( Buildrake::Rush.base_name( platform_path ) ){
     ndk_out_dir = "./ndk_out"
-    ndk_build = "\#{android_ndk}/ndk-build -B NDK_APP_DST_DIR='\#{ndk_out_dir}/${TARGET_ARCH_ABI}' NDK_OUT='\#{ndk_out_dir}' APP_OPTIM=\#{app_optim}"
+    ndk_build = "\#{android_ndk}/ndk-build -B NDK_APP_DST_DIR='\#{ndk_out_dir}/${TARGET_ARCH_ABI}' NDK_OUT='\#{ndk_out_dir}' APP_OPTIM=\#{app_optim} PLATFORM=android CONFIG=\#{config} PLATFORM_PATH=\#{platform_path} ANDROID_NDK_VERSION=\#{Buildrake::Rush.env( 'ANDROID_NDK_VERSION' )}"
     ndk_build = "\#{ndk_build} APP_STL=\#{android_stl}" if ! android_stl.nil? && ! android_stl.empty?
     Buildrake::Rush.sh( ndk_build )
     
@@ -775,7 +769,6 @@ EOS
           
           @lib_dirs[ :windows ][ :debug ].each{|dir|
             dir = "${#{@project_name.upcase}_ROOT_DIR}/#{dir}" if dir =~ /^\./
-            dir = dir.gsub( /\(/, "ENV{" ).gsub( /\)/, "}" )
                   f.puts <<EOS
 set(#{@project_name.upcase}_LINK_DIRS_DEBUG ${#{@project_name.upcase}_LINK_DIRS_DEBUG} #{dir})
 EOS
@@ -783,7 +776,6 @@ EOS
           
           @lib_dirs[ :windows ][ :release ].each{|dir|
             dir = "${#{@project_name.upcase}_ROOT_DIR}/#{dir}" if dir =~ /^\./
-            dir = dir.gsub( /\(/, "ENV{" ).gsub( /\)/, "}" )
             f.puts <<EOS
 set(#{@project_name.upcase}_LINK_DIRS_RELEASE ${#{@project_name.upcase}_LINK_DIRS_RELEASE} #{dir})
 EOS
@@ -833,7 +825,7 @@ def build
   cmake_generator = Buildrake::Rush.env( "CMAKE_GENERATOR" )
   platform_path = platform_path( "windows", config )
   Buildrake::Rush.remaked( Buildrake::Rush.base_name( platform_path ) ){
-    Buildrake::Rush.sh( "cmake ../\#{windows_runtime} -DCMAKE_CONFIGURATION_TYPES=\#{config} -G\\"\#{cmake_generator}\\" -A\\"\#{windows_arch}\\"" )
+    Buildrake::Rush.sh( "cmake ../\#{windows_runtime} -DCMAKE_CONFIGURATION_TYPES=\#{config} -G\\"\#{cmake_generator}\\" -A\\"\#{windows_arch}\\" --no-warn-unused-cli -DPLATFORM=windows -DCONFIG=\#{config} -DPLATFORM_PATH=\#{platform_path}" )
     Buildrake::Rush.sh( "msbuild #{@project_name}.sln /m /t:Rebuild /p:Configuration=\#{config} /p:Platform=\\"\#{windows_arch}\\"" )
     
     built_files = []

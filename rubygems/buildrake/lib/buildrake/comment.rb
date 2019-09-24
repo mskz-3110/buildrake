@@ -109,7 +109,7 @@ EOS
 EOS
         when :api
           codes.push <<EOS.chomp
-  [DllImport(DllName)]
+  [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
 EOS
           
           if element.key?( :value )
