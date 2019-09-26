@@ -55,61 +55,52 @@ EOS
       @libraries = {}
       
       @platforms.each{|platform|
+        @lib_dirs[ platform ] = {}
+        @c_flags[ platform ] = {}
+        @cxx_flags[ platform ] = {}
+        @ld_flags[ platform ] = {}
         @configs.each{|config|
-          c_flags   = []
-          cxx_flags = []
-          ld_flags  = []
+          @lib_dirs[ platform ][ config ] = []
+          @c_flags[ platform ][ config ] = []
+          @cxx_flags[ platform ][ config ] = []
+          @ld_flags[ platform ][ config ] = []
           case platform
           when :windows
-            c_flags = [ "/W4" ]
-            cxx_flags = c_flags.clone
+            c_flag( platform, config, [ "/W4" ] )
+            cxx_flag( platform, config, [ "/W4" ] )
           else
-            c_flags = [ "-g -Wall" ]
-            case config
-            when :debug
-              c_flags.push "-UNDEBUG"
-            when :release
-              c_flags.push "-DNDEBUG"
-            end
+            c_flag( platform, config, [ "-g -Wall" ] )
+            cxx_flag( platform, config, [ "-g -Wall" ] )
             
             case platform
             when :macos, :ios
-              c_flags.push "-fembed-bitcode"
+              c_flag( platform, config, [ "-fembed-bitcode" ] )
+              cxx_flag( platform, config, [ "-fembed-bitcode" ] )
             end
-            cxx_flags = c_flags.clone
             
             case platform
             when :android
-              cxx_flags.push "-fexceptions -frtti"
+              cxx_flag( platform, config, [ "-fexceptions -frtti" ] )
             end
           end
-          
-          lib_dir( platform, config, [] )
-          c_flag( platform, config, c_flags )
-          cxx_flag( platform, config, cxx_flags )
-          ld_flag( platform, config, ld_flags )
         }
       }
     end
     
     def lib_dir( platform, config, dirs )
-      @lib_dirs[ platform ] = {} if ! @lib_dirs.key?( platform )
-      @lib_dirs[ platform ][ config ] = dirs
+      @lib_dirs[ platform ][ config ].concat( dirs )
     end
     
     def c_flag( platform, config, flags )
-      @c_flags[ platform ] = {} if ! @c_flags.key?( platform )
-      @c_flags[ platform ][ config ] = flags
+      @c_flags[ platform ][ config ].concat( flags )
     end
     
     def cxx_flag( platform, config, flags )
-      @cxx_flags[ platform ] = {} if ! @cxx_flags.key?( platform )
-      @cxx_flags[ platform ][ config ] = flags
+      @cxx_flags[ platform ][ config ].concat( flags )
     end
     
     def ld_flag( platform, config, flags )
-      @ld_flags[ platform ] = {} if ! @ld_flags.key?( platform )
-      @ld_flags[ platform ][ config ] = flags
+      @ld_flags[ platform ][ config ].concat( flags )
     end
     
     def execute( name, srcs, libs = [] )
@@ -825,7 +816,7 @@ def build
   cmake_generator = Buildrake::Rush.env( "CMAKE_GENERATOR" )
   platform_path = platform_path( "windows", config )
   Buildrake::Rush.remaked( Buildrake::Rush.base_name( platform_path ) ){
-    Buildrake::Rush.sh( "cmake ../\#{windows_runtime} -DCMAKE_CONFIGURATION_TYPES=\#{config} -G\\"\#{cmake_generator}\\" -A\\"\#{windows_arch}\\" --no-warn-unused-cli -DPLATFORM=windows -DCONFIG=\#{config} -DPLATFORM_PATH=\#{platform_path}" )
+    Buildrake::Rush.sh( "cmake ../\#{windows_runtime} -DCMAKE_CONFIGURATION_TYPES=\#{config} -DCMAKE_BUILD_TYPE=\#{config} -G\\"\#{cmake_generator}\\" -A\\"\#{windows_arch}\\" --no-warn-unused-cli -DPLATFORM=windows -DCONFIG=\#{config} -DPLATFORM_PATH=\#{platform_path}" )
     Buildrake::Rush.sh( "msbuild #{@project_name}.sln /m /t:Rebuild /p:Configuration=\#{config} /p:Platform=\\"\#{windows_arch}\\"" )
     
     built_files = []
