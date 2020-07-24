@@ -28,13 +28,20 @@ module Buildrake
       Dir.exists?( path )
     end
     
-    def changed( path, &block )
-      Dir.chdir( path, &block )
+    def changed( path )
+      if block_given?
+        Dir.chdir( path ){
+          yield
+        }
+      else
+        Dir.chdir( path )
+      end
     end
     
     def maked( path, &block )
       FileUtils.mkdir_p( path ) if ! Rush.dir?( path )
-      Rush.changed( path, &block )
+      Rush.changed( path, &block ) if block_given?
+      path
     end
     
     def remaked( path, &block )
@@ -66,6 +73,10 @@ module Buildrake
       File.extname( path ).gsub( /^\./, "" )
     end
     
+    def dir_name( path = "." )
+      Rush.base_name( full_dir_path( path ) )
+    end
+    
     def dir_path( path )
       File.dirname( path )
     end
@@ -81,13 +92,12 @@ module Buildrake
       ENV.key?( key )
     end
     
-    def env( key, value = nil )
-      if value.nil? && Rush.env?( key )
-        value = ENV[ key ]
-      else
-        ENV[ key ] = value
-      end
-      value
+    def env_get( key, default_value = nil )
+      env?( key ) ? ENV[ key ] : default_value
+    end
+    
+    def env_set( key, value )
+      ENV[ key ] = value
     end
     
     def pascal_case( name )
@@ -117,6 +127,10 @@ module Buildrake
     
     def windows?
       ( "windows" == Rush.os_type )
+    end
+    
+    def file_stat( path )
+      File::Stat.new( path )
     end
   end
 end

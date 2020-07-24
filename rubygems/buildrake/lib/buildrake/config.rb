@@ -44,7 +44,7 @@ EOS
       @windows_runtimes = [ "MT", "MD" ]
       
       @macos_archs = [ "x86_64" ]
-      @ios_archs = [ "armv7", "armv7s", "arm64" ]
+      @ios_archs = [ "arm64" ]
       
       @android_archs = [ "x86", "armeabi-v7a", "arm64-v8a" ]
       @android_api_level = 21
