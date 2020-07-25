@@ -28,14 +28,10 @@ module Buildrake
       Dir.exists?( path )
     end
     
-    def changed( path )
-      if block_given?
-        Dir.chdir( path ){
-          yield
-        }
-      else
-        Dir.chdir( path )
-      end
+    def changed( path, &block )
+      Dir.chdir( path ){
+        block.call
+      }
     end
     
     def maked( path, &block )
