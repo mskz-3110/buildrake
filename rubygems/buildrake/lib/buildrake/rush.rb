@@ -70,18 +70,20 @@ module Buildrake
     end
     
     def dir_name( path = "." )
-      Rush.base_name( full_dir_path( path ) )
-    end
-    
-    def dir_path( path )
-      File.dirname( path )
+      Rush.base_name( Rush.full_dir_path( File.dirname( path ) ) )
     end
     
     def full_dir_path( path = "." )
+      path = File.dirname( path ) if Rush.file?( path )
       Rush.changed( path ){
         path = Dir.pwd
       }
       path
+    end
+    
+    def full_file_path( path = "." )
+      dir_path = Buildrake::Rush.full_dir_path( path )
+      "#{dir_path}/#{File.basename( path )}"
     end
     
     def env?( key )

@@ -319,7 +319,7 @@ else
   config = Buildrake::Rush.env( "CONFIG", "Debug" )
 end
 puts "CONFIG=\#{config}"
-Buildrake::Rush.env( "PLATFORM_PATH", "\#{platform_path( Buildrake::Rush.base_name( Buildrake::Rush.full_dir_path ), config )}" ) if ! Buildrake::Rush.env?( "PLATFORM_PATH" )
+Buildrake::Rush.env( "PLATFORM_PATH", "\#{platform_path( Buildrake::Rush.dir_name, config )}" ) if ! Buildrake::Rush.env?( "PLATFORM_PATH" )
 puts "PLATFORM_PATH=\#{Buildrake::Rush.env( 'PLATFORM_PATH' )}"
 EOS
       }
@@ -728,7 +728,7 @@ def build
     dst = "\#{src}/../../../lib/\#{platform_path}/libs"
     #{@libraries.keys}.each{|name|
       Buildrake::Rush.find( "\#{src}/\#{ndk_out_dir}/local/*/lib\#{name}.*" ){|path|
-        arch = Buildrake::Rush.base_name( Buildrake::Rush.dir_path( path ) )
+        arch = Buildrake::Rush.dir_name( path )
         Buildrake::Rush.maked( "\#{dst}/\#{arch}" ){
           Buildrake::Rush.rename( path, "." )
         }
