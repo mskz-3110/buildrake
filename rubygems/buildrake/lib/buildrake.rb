@@ -1,6 +1,5 @@
 require "buildrake/version"
 require "buildrake/rush"
-require "buildrake/config"
 require "buildrake/comment"
 require "buildrake/github"
 require "yaml"
@@ -55,9 +54,9 @@ anchors:
     - iphonesimulator.x86_64
     - iphoneos.arm64
   android_targets: &android_targets
-    - 21.x86
-    - 21.armeabi-v7a
-    - 21.arm64-v8a
+    - x86
+    - armeabi-v7a
+    - arm64-v8a
   linux_targets: &linux_targets
     - x86_64
   windows_targets: &windows_targets
@@ -137,12 +136,27 @@ EOS
       f.puts <<EOS
 require "buildrake"
 
+desc "Setup"
+task :setup do
+  Buildrake.setup
+end
+
 desc "Show help message"
 task :help do
   yaml = YAML.load_file( "\#{Buildrake::Rush.full_dir_path( __FILE__ )}/buildrake.yaml" )
   yaml[ "anchors" ][ "platforms" ].each{|platform, _|
     [ "debug", "release" ].each{|configuration|
-      puts "rake build \#{platform} \#{configuration}"
+      case platform
+      when "android"
+        android_ndk = "/tmp/android-ndk-r10e"
+        puts "BUILDRAKE_ANDROID_NDK=\#{android_ndk} rake build \#{platform} \#{configuration}"
+        puts "BUILDRAKE_ANDROID_NDK=\#{android_ndk} BUILDRAKE_ANDROID_STL=c++_static rake build \#{platform} \#{configuration}"
+        puts "BUILDRAKE_ANDROID_NDK=\#{android_ndk} BUILDRAKE_ANDROID_STL=gnustl_static rake build \#{platform} \#{configuration}"
+      when "windows"
+        
+      else
+        puts "rake build \#{platform} \#{configuration}"
+      end
     }
   }
 end
@@ -175,12 +189,12 @@ EOS
     }
   end
   
-  def self.generate_cmakefile( platform, root_dir_path, project_name, buildrake, build, name, configurations )
+  def self.generate_cmakefile( platform, root_dir_path, project_name, buildrake, build, name, targets, configurations )
     Buildrake::Rush.find( [ "CMakeCache.txt", "CMakeFiles", "CMakeScripts", "Makefile", "cmake_install.cmake" ] ){|path|
       Buildrake::Rush.remove( path )
     }
     
-    open( "./CMakeLists.txt", "wb" ){|f|
+    open( "CMakeLists.txt", "wb" ){|f|
       f.puts <<EOS
 cmake_minimum_required(VERSION #{safe_string( buildrake[ "cmake_version" ] )})
 set(#{project_name.upcase}_ROOT_DIR #{root_dir_path})
@@ -192,43 +206,25 @@ project(#{project_name})
 EOS
       f.puts ""
       
-      debug = configurations[ "debug" ]
-      debug_c_flags = safe_array( debug[ "c_flags" ] )
-      debug_cxx_flags = safe_array( debug[ "cxx_flags" ] )
-      debug_exe_linker_flags = safe_array( debug[ "exe_linker_flags" ] )
-      debug_static_linker_flags = safe_array( debug[ "static_linker_flags" ] )
-      debug_shared_linker_flags = safe_array( debug[ "shared_linker_flags" ] )
-      debug_link_dirs = safe_array( debug[ "link_dirs" ] ).map{|link_dir|
-        link_dir = "${#{project_name.upcase}_ROOT_DIR}/#{link_dir}" if link_dir =~ /^\./
-        link_dir
-      }
-      release = configurations[ "release" ]
-      release_c_flags = safe_array( release[ "c_flags" ] )
-      release_cxx_flags = safe_array( release[ "cxx_flags" ] )
-      release_exe_linker_flags = safe_array( release[ "exe_linker_flags" ] )
-      release_static_linker_flags = safe_array( release[ "static_linker_flags" ] )
-      release_shared_linker_flags = safe_array( release[ "shared_linker_flags" ] )
-      release_link_dirs = safe_array( release[ "link_dirs" ] ).map{|link_dir|
-        link_dir = "${#{project_name.upcase}_ROOT_DIR}/#{link_dir}" if link_dir =~ /^\./
-        link_dir
-      }
+      debug = safe_array_configuration( project_name, configurations[ "debug" ] )
+      release = safe_array_configuration( project_name, configurations[ "release" ] )
       
       f.puts <<EOS
-set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} #{debug_c_flags.join( ' ' )}")
-set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} #{debug_cxx_flags.join( ' ' )}")
-set(CMAKE_EXE_LINKER_FLAGS_DEBUG "${CMAKE_EXE_LINKER_FLAGS_DEBUG} #{debug_exe_linker_flags.join( ' ' )}")
-set(CMAKE_STATIC_LINKER_FLAGS_DEBUG "${CMAKE_STATIC_LINKER_FLAGS_DEBUG} #{debug_static_linker_flags.join( ' ' )}")
-set(CMAKE_SHARED_LINKER_FLAGS_DEBUG "${CMAKE_SHARED_LINKER_FLAGS_DEBUG} #{debug_shared_linker_flags.join( ' ' )}")
-set(#{project_name.upcase}_LINK_DIRS_DEBUG #{debug_link_dirs.join( " " )})
-set(#{name.upcase}_LINK_LIBS_DEBUG #{safe_array( debug[ "link_libs" ] ).join( " " )})
+set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} #{debug[ 'c_flags' ].join( ' ' )}")
+set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} #{debug[ 'cxx_flags' ].join( ' ' )}")
+set(CMAKE_EXE_LINKER_FLAGS_DEBUG "${CMAKE_EXE_LINKER_FLAGS_DEBUG} #{debug[ 'exe_linker_flags' ].join( ' ' )}")
+set(CMAKE_STATIC_LINKER_FLAGS_DEBUG "${CMAKE_STATIC_LINKER_FLAGS_DEBUG} #{debug[ 'static_linker_flags' ].join( ' ' )}")
+set(CMAKE_SHARED_LINKER_FLAGS_DEBUG "${CMAKE_SHARED_LINKER_FLAGS_DEBUG} #{debug[ 'shared_linker_flags' ].join( ' ' )}")
+set(#{project_name.upcase}_LINK_DIRS_DEBUG #{debug[ 'link_dirs' ].join( ' ' )})
+set(#{name.upcase}_LINK_LIBS_DEBUG #{debug[ 'link_libs' ].join( ' ' )})
 
-set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} #{release_c_flags.join( ' ' )}")
-set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} #{release_c_flags.join( ' ' )}")
-set(CMAKE_EXE_LINKER_FLAGS_RELEASE "${CMAKE_EXE_LINKER_FLAGS_RELEASE} #{release_exe_linker_flags.join( ' ' )}")
-set(CMAKE_STATIC_LINKER_FLAGS_RELEASE "${CMAKE_STATIC_LINKER_FLAGS_RELEASE} #{release_static_linker_flags.join( ' ' )}")
-set(CMAKE_SHARED_LINKER_FLAGS_RELEASE "${CMAKE_SHARED_LINKER_FLAGS_RELEASE} #{release_shared_linker_flags.join( ' ' )}")
-set(#{project_name.upcase}_LINK_DIRS_RELEASE #{release_link_dirs.join( " " )})
-set(#{name.upcase}_LINK_LIBS_RELEASE #{safe_array( release[ "link_libs" ] ).join( " " )})
+set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} #{release[ 'c_flags' ].join( ' ' )}")
+set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} #{release[ 'c_flags' ].join( ' ' )}")
+set(CMAKE_EXE_LINKER_FLAGS_RELEASE "${CMAKE_EXE_LINKER_FLAGS_RELEASE} #{release[ 'exe_linker_flags' ].join( ' ' )}")
+set(CMAKE_STATIC_LINKER_FLAGS_RELEASE "${CMAKE_STATIC_LINKER_FLAGS_RELEASE} #{release[ 'static_linker_flags' ].join( ' ' )}")
+set(CMAKE_SHARED_LINKER_FLAGS_RELEASE "${CMAKE_SHARED_LINKER_FLAGS_RELEASE} #{release[ 'shared_linker_flags' ].join( ' ' )}")
+set(#{project_name.upcase}_LINK_DIRS_RELEASE #{release[ 'link_dirs' ].join( ' ' )})
+set(#{name.upcase}_LINK_LIBS_RELEASE #{release[ 'link_libs' ].join( ' ' )})
 
 message(#{project_name.upcase}_ROOT_DIR:${#{project_name.upcase}_ROOT_DIR})
 message(CMAKE_BUILD_TYPE:${CMAKE_BUILD_TYPE})
@@ -242,17 +238,15 @@ message(BUILDRAKE_CONFIGURATION:${BUILDRAKE_CONFIGURATION})
 message(BUILDRAKE_BUILD_KEY:${BUILDRAKE_BUILD_KEY})
 EOS
       
-      safe_array( build[ "inc_dirs" ] ).each{|inc_dir|
-        inc_dir = "${#{project_name.upcase}_ROOT_DIR}/#{inc_dir}" if inc_dir =~ /^\./
+      safe_array( build[ "inc_dirs" ] ).each{|path|
         f.puts <<EOS
-include_directories(#{inc_dir})
+include_directories(#{project_root_path( project_name, path )})
 EOS
       }
       
       f.puts "set(#{name.upcase}_SRCS)"
-      safe_array( build[ "srcs" ] ).each{|src|
-        src = "${#{project_name.upcase}_ROOT_DIR}/#{src}" if src =~ /^\./
-        f.puts "set(#{name.upcase}_SRCS ${#{name.upcase}_SRCS} #{src})"
+      safe_array( build[ "srcs" ] ).each{|path|
+        f.puts "set(#{name.upcase}_SRCS ${#{name.upcase}_SRCS} #{project_root_path( project_name, path )})"
       }
       
       case safe_string( build[ "type" ] )
@@ -274,6 +268,113 @@ EOS
     }
   end
   
+  def self.generate_ndkfile( platform, root_dir_path, project_name, buildrake, build, name, targets, configurations )
+    modules = name
+    case safe_string( build[ "type" ] )
+    when "lib"
+      modules = "#{name}-static #{name}-shared"
+    end
+    
+    debug = safe_array_configuration( project_name, configurations[ "debug" ] )
+    release = safe_array_configuration( project_name, configurations[ "release" ] )
+    
+    open( "Application.mk", "wb" ){|f|
+      f.puts <<EOS
+APP_MODULES := #{modules}
+APP_PLATFORM := android-#{Rush.env_get( "BUILDRAKE_ANDROID_API_LEVEL", "21" )}
+APP_ABI := #{targets.join( ' ' )}
+ifeq ($(APP_OPTIM),debug)
+  APP_CFLAGS := #{debug[ 'c_flags' ].join( ' ' )}
+  APP_CPPFLAGS := #{debug[ 'cxx_flags' ].join( ' ' )}
+  APP_LDFLAGS := #{debug[ 'static_linker_flags' ].join( ' ' )} #{debug[ 'shared_linker_flags' ].join( ' ' )}
+else
+  APP_CFLAGS := #{release[ 'c_flags' ].join( ' ' )}
+  APP_CPPFLAGS := #{release[ 'cxx_flags' ].join( ' ' )}
+  APP_LDFLAGS := #{release[ 'static_linker_flags' ].join( ' ' )} #{release[ 'shared_linker_flags' ].join( ' ' )}
+endif
+EOS
+    }
+    
+    open( "Android.mk", "wb" ){|f|
+      f.puts <<EOS
+LOCAL_PATH := $(call my-dir)/..
+
+#{project_name.upcase}_ROOT_DIR := #{root_dir_path}
+
+EOS
+      
+      local_settings = [
+        "LOCAL_CFLAGS := ",
+        "LOCAL_CXXFLAGS := ",
+        "LOCAL_LDLIBS := ",
+      ]
+      
+      safe_array( build[ "inc_dirs" ] ).each{|path|
+        path = project_root_path( project_name, path )
+        local_settings.push "LOCAL_CFLAGS += -I#{path}"
+        local_settings.push "LOCAL_CXXFLAGS += -I#{path}"
+      }
+      
+      local_settings.push "ifeq ($(APP_OPTIM),debug)"
+      debug[ "link_dirs" ].each{|path|
+        local_settings.push "  LOCAL_LDLIBS += -L#{project_root_path( project_name, path )}/libs/$(TARGET_ARCH_ABI)"
+      }
+      debug[ "link_libs" ].each{|lib|
+        local_settings.push "  LOCAL_LDLIBS += -l#{lib}"
+      }
+      local_settings.push "else"
+      release[ "link_dirs" ].each{|path|
+        local_settings.push "  LOCAL_LDLIBS += -L#{project_root_path( project_name, path )}/libs/$(TARGET_ARCH_ABI)"
+      }
+      release[ "link_libs" ].each{|lib|
+        local_settings.push "  LOCAL_LDLIBS += -l#{lib}"
+      }
+      local_settings.push "endif"
+      
+      f.puts "#{name.upcase}_SRCS := "
+      safe_array( build[ "srcs" ] ).each{|path|
+        f.puts "#{name.upcase}_SRCS += #{project_root_path( project_name, path )}"
+      }
+      f.puts ""
+      
+      case safe_string( build[ "type" ] )
+      when "exe"
+        f.puts <<EOS
+include $(CLEAR_VARS)
+LOCAL_MODULE := #{name}
+LOCAL_SRC_FILES := $(#{name.upcase}_SRCS)
+#{local_settings.join( "\n" )}
+$(info LOCAL_CFLAGS=$(LOCAL_CFLAGS))
+$(info LOCAL_CXXFLAGS=$(LOCAL_CXXFLAGS))
+$(info LOCAL_LDLIBS=$(LOCAL_LDLIBS))
+include $(BUILD_EXECUTABLE)
+EOS
+      when "lib"
+        f.puts <<EOS
+include $(CLEAR_VARS)
+LOCAL_MODULE := #{name}-static
+LOCAL_MODULE_FILENAME := lib#{name}
+LOCAL_SRC_FILES := $(#{name.upcase}_SRCS)
+#{local_settings.join( "\n" )}
+$(info LOCAL_CFLAGS=$(LOCAL_CFLAGS))
+$(info LOCAL_CXXFLAGS=$(LOCAL_CXXFLAGS))
+$(info LOCAL_LDLIBS=$(LOCAL_LDLIBS))
+include $(BUILD_STATIC_LIBRARY)
+
+include $(CLEAR_VARS)
+LOCAL_MODULE := #{name}-shared
+LOCAL_MODULE_FILENAME := lib#{name}
+LOCAL_SRC_FILES := $(#{name.upcase}_SRCS)
+#{local_settings.join( "\n" )}
+$(info LOCAL_CFLAGS=$(LOCAL_CFLAGS))
+$(info LOCAL_CXXFLAGS=$(LOCAL_CXXFLAGS))
+$(info LOCAL_LDLIBS=$(LOCAL_LDLIBS))
+include $(BUILD_SHARED_LIBRARY)
+EOS
+      end
+    }
+  end
+  
   def self.generate_common_buildfiles
     open( "common.rb", "wb" ){|f|
       f.puts <<EOS
@@ -286,7 +387,14 @@ def get_platform_build_name( platform )
   when "ios"
     "\#{\`xcrun --sdk iphoneos --show-sdk-version\`.chomp}"
   when "android"
-    # TODO
+    android_stl = Buildrake::Rush.env_get( "BUILDRAKE_ANDROID_STL", "" )
+    android_ndk = Buildrake::Rush.env_get( "BUILDRAKE_ANDROID_NDK", "" )
+    abort( "Invalid android ndk: BUILDRAKE_ANDROID_NDK=\#{android_ndk}" ) if android_ndk.empty?
+    android_ndk_version = android_ndk.split( '-' ).last.chomp( '/' )
+    Buildrake::Rush.env_set( "BUILDRAKE_ANDROID_NDK_VERSION", android_ndk_version )
+    path = "\#{android_ndk_version}"
+    path = "\#{path}_\#{android_stl}" if ! android_stl .empty?
+    path
   when "linux"
     # TODO
   when "windows"
@@ -304,16 +412,31 @@ def build( platform, yaml_file_path, &block )
   root_dir_path = Buildrake::Rush.full_dir_path( yaml_file_path )
   configuration = Buildrake::Rush.env_get( "BUILDRAKE_CONFIGURATION" ).capitalize
   build_key = get_build_key( platform, configuration )
-  cmake_options = [
-#    "--no-warn-unused-cli",
-    "-DBUILDRAKE_PLATFORM=\#{platform}",
-    "-DBUILDRAKE_CONFIGURATION=\#{configuration}",
-    "-DBUILDRAKE_BUILD_KEY=\#{build_key}",
-  ]
+  case platform
+  when "android"
+    android_ndk_version = Buildrake::Rush.env_get( "BUILDRAKE_ANDROID_NDK_VERSION", "" )
+    options = [
+      "-B",
+      "APP_OPTIM=\#{configuration.downcase}",
+      "BUILDRAKE_ANDROID_NDK_VERSION=\#{android_ndk_version}",
+      "BUILDRAKE_PLATFORM=\#{platform}",
+      "BUILDRAKE_CONFIGURATION=\#{configuration}",
+      "BUILDRAKE_BUILD_KEY=\#{build_key}",
+    ]
+    android_stl = Buildrake::Rush.env_get( "BUILDRAKE_ANDROID_STL", "" )
+    options.push( "APP_STL=\#{android_stl}" ) if ! android_stl.empty?
+  else
+    options = [
+#      "--no-warn-unused-cli",
+      "-DBUILDRAKE_PLATFORM=\#{platform}",
+      "-DBUILDRAKE_CONFIGURATION=\#{configuration}",
+      "-DBUILDRAKE_BUILD_KEY=\#{build_key}",
+    ]
+  end
   Buildrake::Rush.maked( build_key ){
     buildrake[ "builds" ].each{|build|
       if build[ "platforms" ].key?( platform )
-        block.call( root_dir_path, cmake_options.join( " " ), buildrake, build, build[ "name" ], build[ "platforms" ][ platform ][ "targets" ], configuration, build[ "platforms" ][ platform ][ "configurations" ] )
+        block.call( root_dir_path, options.join( ' ' ), buildrake, build, build[ "name" ], build[ "platforms" ][ platform ][ "targets" ], configuration, build_key, build[ "platforms" ][ platform ][ "configurations" ] )
       end
     }
   }
@@ -321,14 +444,30 @@ end
 
 def build_cmake( platform, yaml_file_path, &block )
   project_name = Buildrake::Rush.dir_name( yaml_file_path )
-  build( platform, yaml_file_path ){|root_dir_path, cmake_option, buildrake, build, name, targets, configuration, configurations|
+  build( platform, yaml_file_path ){|root_dir_path, option, buildrake, build, name, targets, configuration, build_key, configurations|
     Buildrake::Rush.maked( name ){
-      is_generated_cmakefile = false
-      if ! Buildrake::Rush.file?( "./CMakeLists.txt" ) || Buildrake::Rush.file_stat( "./CMakeLists.txt" ).mtime < Buildrake::Rush.file_stat( yaml_file_path ).mtime
-        is_generated_cmakefile = true
-        Buildrake::generate_cmakefile( platform, root_dir_path, project_name, buildrake, build, name, configurations )
+      is_generated_buildfile = false
+      if ! Buildrake::Rush.file?( "CMakeLists.txt" ) || Buildrake::Rush.file_stat( "CMakeLists.txt" ).mtime < Buildrake::Rush.file_stat( yaml_file_path ).mtime
+        is_generated_buildfile = true
+        Buildrake::generate_cmakefile( platform, root_dir_path, project_name, buildrake, build, name, targets, configurations )
       end
-      block.call( is_generated_cmakefile, name, cmake_option, configuration, targets )
+      block.call( is_generated_buildfile, name, option, configuration, targets, build_key )
+    }
+  }
+end
+
+def build_ndk( platform, yaml_file_path, &block )
+  project_name = Buildrake::Rush.dir_name( yaml_file_path )
+  build( platform, yaml_file_path ){|root_dir_path, option, buildrake, build, name, targets, configuration, build_key, configurations|
+    Buildrake::Rush.maked( name ){
+      is_generated_buildfile = false
+      if ! Buildrake::Rush.file?( "Android.mk" ) || Buildrake::Rush.file_stat( "Android.mk" ).mtime < Buildrake::Rush.file_stat( yaml_file_path ).mtime
+        is_generated_buildfile = true
+        Buildrake::Rush.maked( "jni" ){
+          Buildrake::generate_ndkfile( platform, root_dir_path, project_name, buildrake, build, name, targets, configurations )
+        }
+      end
+      block.call( name, option, configuration, targets, build_key )
     }
   }
 end
@@ -357,17 +496,16 @@ EOS
         case platform
         when "macos"
           f.puts <<EOS
-build_cmake( "#{platform}", "\#{__DIR__}/../../buildrake.yaml" ){|is_generated_cmakefile, name, cmake_option, configuration, targets|
+build_cmake( "#{platform}", "\#{__DIR__}/../../buildrake.yaml" ){|is_generated_buildfile, name, option, configuration, targets, build_key|
   targets.each{|target|
     arch = target
     Buildrake::Rush.maked( arch ){
-      Buildrake::Rush.sh( "cmake .. -DCMAKE_BUILD_TYPE=\#{configuration} -DCMAKE_OSX_ARCHITECTURES=\#{arch} \#{cmake_option}" ) if is_generated_cmakefile
+      Buildrake::Rush.sh( "cmake .. -DCMAKE_BUILD_TYPE=\#{configuration} -DCMAKE_OSX_ARCHITECTURES=\#{arch} \#{option}" ) if is_generated_buildfile
       Buildrake::Rush.sh( "make clean all" )
     }
   }
   
-  dir_name = Buildrake::Rush.dir_name( "." )
-  lib_dir_path = Buildrake::Rush.maked( "../../../lib/#{platform}/\#{dir_name}" )
+  lib_dir_path = Buildrake::Rush.maked( "../../../../lib/#{platform}/\#{build_key}" )
   [ "lib\#{name}.a", "lib\#{name}.dylib" ].each{|lib_name|
     if ! Buildrake::Rush.find( "*/\#{lib_name}" ).empty?
       lipo_create( [ "*/\#{lib_name}" ], lib_name )
@@ -379,17 +517,16 @@ build_cmake( "#{platform}", "\#{__DIR__}/../../buildrake.yaml" ){|is_generated_c
 EOS
         when "ios"
           f.puts <<EOS
-build_cmake( "#{platform}", "\#{__DIR__}/../../buildrake.yaml" ){|is_generated_cmakefile, name, cmake_option, configuration, targets|
+build_cmake( "#{platform}", "\#{__DIR__}/../../buildrake.yaml" ){|is_generated_buildfile, name, option, configuration, targets, build_key|
   targets.each{|target|
     sysroot, arch = target.split( "." )
     Buildrake::Rush.maked( arch ){
-      Buildrake::Rush.sh( "cmake .. -DCMAKE_BUILD_TYPE=\#{configuration} -DCMAKE_OSX_ARCHITECTURES=\#{arch} -DCMAKE_OSX_SYSROOT=\#{sysroot} \#{cmake_option}" ) if is_generated_cmakefile
+      Buildrake::Rush.sh( "cmake .. -DCMAKE_BUILD_TYPE=\#{configuration} -DCMAKE_OSX_ARCHITECTURES=\#{arch} -DCMAKE_OSX_SYSROOT=\#{sysroot} \#{option}" ) if is_generated_buildfile
       Buildrake::Rush.sh( "make clean all" )
     }
   }
   
-  dir_name = Buildrake::Rush.dir_name( "." )
-  lib_dir_path = Buildrake::Rush.maked( "../../../lib/#{platform}/\#{dir_name}" )
+  lib_dir_path = Buildrake::Rush.maked( "../../../../lib/#{platform}/\#{build_key}" )
   [ "lib\#{name}.a", "lib\#{name}.dylib" ].each{|lib_name|
     if ! Buildrake::Rush.find( "*/\#{lib_name}" ).empty?
       lipo_create( [ "*/\#{lib_name}" ], lib_name )
@@ -400,7 +537,23 @@ build_cmake( "#{platform}", "\#{__DIR__}/../../buildrake.yaml" ){|is_generated_c
 }
 EOS
         when "android"
-          # TODO
+          f.puts <<EOS
+android_ndk = Buildrake::Rush.env_get( "BUILDRAKE_ANDROID_NDK", "" )
+build_ndk( "#{platform}", "\#{__DIR__}/../../buildrake.yaml" ){|name, option, configuration, targets, build_key|
+  ndk_out_dir = "./ndk_out"
+  Buildrake::Rush.sh( "\#{android_ndk}/ndk-build NDK_APP_DST_DIR='\#{ndk_out_dir}/${TARGET_ARCH_ABI}' NDK_OUT='\#{ndk_out_dir}' \#{option}" )
+  
+  lib_dir_path = Buildrake::Rush.maked( "../../../../lib/#{platform}/\#{build_key}/libs" )
+  [ "lib\#{name}.a", "lib\#{name}.so" ].each{|lib_name|
+    Buildrake::Rush.find( "\#{ndk_out_dir}/local/*/\#{lib_name}" ){|path|
+      path = Buildrake::Rush.full_file_path( path )
+      Buildrake::Rush.maked( "\#{lib_dir_path}/\#{Buildrake::Rush.dir_name( path )}" ){
+        Buildrake::Rush.rename( path, "." )
+      }
+    }
+  }
+}
+EOS
         when "linux"
           # TODO
         when "windows"
@@ -413,7 +566,7 @@ EOS
   def self.safe_string( value, default_value = "" )
     value = safe_nil( value, default_value )
     if ! value.is_a?( String )
-      value = value.is_a?( Array ) ? value.join( " " ) : value.to_s
+      value = value.is_a?( Array ) ? value.join( ' ' ) : value.to_s
     end
     value
   end
@@ -421,12 +574,30 @@ EOS
   def self.safe_array( value, default_value = [] )
     value = safe_nil( value, default_value )
     if ! value.is_a?( Array )
-      value = value.is_a?( String ) ? value.split( " " ) : [ value ]
+      value = value.is_a?( String ) ? value.split( ' ' ) : [ value ]
     end
     value
   end
   
   def self.safe_nil( value, default_value )
     value.nil? ? default_value : value
+  end
+  
+  def self.safe_array_configuration( project_name, configuration )
+    configuration[ "c_flags" ] = safe_array( configuration[ "c_flags" ] )
+    configuration[ "cxx_flags" ] = safe_array( configuration[ "cxx_flags" ] )
+    configuration[ "exe_linker_flags" ] = safe_array( configuration[ "exe_linker_flags" ] )
+    configuration[ "static_linker_flags" ] = safe_array( configuration[ "static_linker_flags" ] )
+    configuration[ "shared_linker_flags" ] = safe_array( configuration[ "shared_linker_flags" ] )
+    configuration[ "link_dirs" ] = safe_array( configuration[ "link_dirs" ] ).map{|path|
+      project_root_path( project_name, path )
+    }
+    configuration[ "link_libs" ] = safe_array( configuration[ "link_libs" ] )
+    configuration
+  end
+  
+  def self.project_root_path( project_name, path )
+    path = "${#{project_name.upcase}_ROOT_DIR}/#{path}" if path =~ /^\./
+    path
   end
 end

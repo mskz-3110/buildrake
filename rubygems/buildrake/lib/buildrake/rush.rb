@@ -21,7 +21,7 @@ module Buildrake
     end
     
     def file?( path )
-      File.exists?( path )
+      File.file?( path )
     end
     
     def dir?( path )
@@ -37,7 +37,7 @@ module Buildrake
     def maked( path, &block )
       FileUtils.mkdir_p( path ) if ! Rush.dir?( path )
       Rush.changed( path, &block ) if block_given?
-      path
+      Rush.full_dir_path( path )
     end
     
     def remaked( path, &block )
@@ -83,7 +83,9 @@ module Buildrake
     
     def full_file_path( path = "." )
       dir_path = Buildrake::Rush.full_dir_path( path )
-      "#{dir_path}/#{File.basename( path )}"
+      base_name = Rush.base_name( path )
+      dir_path = "#{dir_path}/#{base_name}" if Rush.file?( base_name )
+      dir_path
     end
     
     def env?( key )
