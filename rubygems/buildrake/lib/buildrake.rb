@@ -11,7 +11,7 @@ module Buildrake
     yaml = YAML.load_file( yaml_file_path )
     generate_rakefile
     generate_gitignore
-    Rush.remaked( "build" ){
+    Buildrake::Rush.remaked( "build" ){
       generate_common_buildfiles
       yaml[ "anchors" ][ "platforms" ].each{|platform, _|
         generate_platform_buildfiles( platform )
@@ -141,33 +141,28 @@ task :setup do
   Buildrake.setup
 end
 
-desc "Show help message"
-task :help do
-  yaml = YAML.load_file( "\#{Buildrake::Rush.full_dir_path( __FILE__ )}/buildrake.yaml" )
-  yaml[ "anchors" ][ "platforms" ].each{|platform, _|
-    [ "debug", "release" ].each{|configuration|
-      case platform
-      when "android"
-        android_ndk = "/tmp/android-ndk-r10e"
-        puts "BUILDRAKE_ANDROID_NDK=\#{android_ndk} rake build \#{platform} \#{configuration}"
-        puts "BUILDRAKE_ANDROID_NDK=\#{android_ndk} BUILDRAKE_ANDROID_STL=c++_static rake build \#{platform} \#{configuration}"
-        puts "BUILDRAKE_ANDROID_NDK=\#{android_ndk} BUILDRAKE_ANDROID_STL=gnustl_static rake build \#{platform} \#{configuration}"
-      when "windows"
-        
-      else
-        puts "rake build \#{platform} \#{configuration}"
-      end
-    }
-  }
-end
-
 desc "Build <platform> <configuration>"
 task :build do
   ARGV.shift
   platform = ARGV.shift
   configuration = ARGV.shift
   if platform.nil? || configuration.nil?
-    Rake::Task[ "help" ].invoke
+    yaml = YAML.load_file( "\#{Buildrake::Rush.full_dir_path( __FILE__ )}/buildrake.yaml" )
+    yaml[ "anchors" ][ "platforms" ].each{|platform, _|
+      [ "debug", "release" ].each{|configuration|
+        case platform
+        when "android"
+          android_ndk = "/tmp/android-ndk-r10e"
+          puts "BUILDRAKE_ANDROID_NDK=\#{android_ndk} rake build \#{platform} \#{configuration}"
+          puts "BUILDRAKE_ANDROID_NDK=\#{android_ndk} BUILDRAKE_ANDROID_STL=c++_static rake build \#{platform} \#{configuration}"
+          puts "BUILDRAKE_ANDROID_NDK=\#{android_ndk} BUILDRAKE_ANDROID_STL=gnustl_static rake build \#{platform} \#{configuration}"
+        when "windows"
+          # TODO
+        else
+          puts "rake build \#{platform} \#{configuration}"
+        end
+      }
+    }
   else
     Buildrake::Rush.changed( "build/\#{platform}" ){
       Buildrake::Rush.sh( "BUILDRAKE_CONFIGURATION=\#{configuration} ruby ./build.rb" )
@@ -175,12 +170,19 @@ task :build do
   end
   exit 0
 end
+
+Buildrake::Rush.find( "*.rake" ){|path|
+  load Buildrake::Rush.full_file_path( path )
+}
 EOS
     }
   end
   
   def self.generate_gitignore
-    open( ".gitignore", "wb" ){|f|
+    path = ".gitignore"
+    return if Buildrake::Rush.file?( path )
+    
+    open( path, "wb" ){|f|
       f.puts <<EOS
 /build
 /lib
@@ -484,7 +486,7 @@ EOS
   end
   
   def self.generate_platform_buildfiles( platform )
-    Rush.remaked( platform ){
+    Buildrake::Rush.remaked( platform ){
       open( "build.rb", "wb" ){|f|
         f.puts <<EOS
 require "../common"
